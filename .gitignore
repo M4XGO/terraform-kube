@@ -1,8 +1,17 @@
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.backup
+# ─── Terraform ────────────────────────────────────────────────────────────────
+tf/.terraform/
+tf/.terraform.lock.hcl
+tf/.terraform-helm/
+
+# State (dossier dédié)
+state/terraform.tfstate
+state/*.backup
+
+# Outputs générés
 terraform-outputs.json
 
-# Cache Helm isolé pour Terraform (généré par ansible/playbooks/pre-deploy.yml)
+# Anciens emplacements (sécurité)
+*.tfstate
+*.tfstate.backup
+.terraform/
 .terraform-helm/

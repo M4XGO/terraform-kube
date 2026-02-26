@@ -4,15 +4,23 @@
         rollout-retry rollout-history app-url app-hosts
 
 CLUSTER_NAME ?= terraform-kube
-# tfvars/local.tfvars est le fichier de variables par défaut du repo.
-# Surcharger via : make deploy TF_VARS=terraform.tfvars
-TF_VARS     ?= tfvars/local.tfvars
+
+# Terraform s'exécute depuis tf/ via -chdir
+TF      = terraform -chdir=tf
+# TF_VARS est relatif à tf/ (ex: tfvars/local.tfvars → tf/tfvars/local.tfvars)
+TF_VARS ?= tfvars/local.tfvars
 
 # ─── Aide ─────────────────────────────────────────────────────────────────────
 help:
 	@echo ""
 	@echo "  terraform-kube — Cluster Kubernetes local"
 	@echo "  Provisionnement : Ansible (minikube) + Terraform (Helm/K8s)"
+	@echo ""
+	@echo "  Structure du repo :"
+	@echo "    tf/        Terraform (modules, tfvars, .terraform-helm/)"
+	@echo "    ansible/   Playbooks Ansible (pre/post-deploy, teardown)"
+	@echo "    helm/      Charts Helm (demo-app, ...)"
+	@echo "    state/     State Terraform (gitignored)"
 	@echo ""
 	@echo "  Commandes principales :"
 	@echo "    make init          Initialiser Terraform + collections Ansible"
@@ -21,7 +29,7 @@ help:
 	@echo "    make deploy        Déploiement complet :"
 	@echo "                         1. Ansible pre-deploy  (minikube start)"
 	@echo "                         2. Terraform apply     (Helm releases)"
-	@echo "                         3. Ansible post-deploy (ClusterIssuer, etc.)"
+	@echo "                         3. Ansible post-deploy (ClusterIssuer, demo-app)"
 	@echo "    make destroy       Destruction rapide :"
 	@echo "                         1. Ansible teardown    (minikube delete)"
 	@echo "                         2. Purge du state Terraform"
@@ -44,29 +52,27 @@ help:
 	@echo ""
 	@echo "  Variables :"
 	@echo "    CLUSTER_NAME     Nom du cluster (défaut: $(CLUSTER_NAME))"
-	@echo "    TF_VARS          Fichier tfvars  (défaut: $(TF_VARS))"
+	@echo "    TF_VARS          Fichier tfvars relatif à tf/ (défaut: $(TF_VARS))"
 	@echo ""
 
 # ─── Initialisation ───────────────────────────────────────────────────────────
 init:
 	@echo ">>> Initialisation Terraform..."
-	terraform init -upgrade
+	$(TF) init -upgrade
 	@echo ">>> Installation des collections Ansible..."
 	ansible-galaxy collection install -r ansible/requirements.yml
-	@test -f $(TF_VARS) && echo ">>> Fichier de variables : $(TF_VARS)" || echo ">>> ATTENTION : $(TF_VARS) non trouvé. Créez-le depuis tfvars/local.tfvars"
+	@test -f tf/$(TF_VARS) && echo ">>> Fichier de variables : tf/$(TF_VARS)" || echo ">>> ATTENTION : tf/$(TF_VARS) non trouvé."
 	@echo ""
 	@echo ">>> Initialisation terminée. Lancez : make deploy"
 
 # ─── Validation ───────────────────────────────────────────────────────────────
 validate:
-	terraform validate
-	terraform fmt -check -recursive
+	$(TF) validate
+	$(TF) fmt -check -recursive
 
 # ─── Plan ─────────────────────────────────────────────────────────────────────
-# PRÉREQUIS : le cluster doit être actif (make ansible-pre d'abord).
-# Les providers kubernetes/helm se connectent pendant le plan.
 plan: _check-deps _check-k8s-deps _check-cluster
-	terraform plan $(if $(wildcard $(TF_VARS)),-var-file=$(TF_VARS),)
+	$(TF) plan $(if $(wildcard tf/$(TF_VARS)),-var-file=$(TF_VARS),)
 
 # ─── Déploiement complet ──────────────────────────────────────────────────────
 deploy: _check-deps ansible-pre tf-apply tf-outputs ansible-post
@@ -86,21 +92,19 @@ ansible-pre: _check-deps
 # Étape 2a — Terraform apply
 tf-apply: _check-deps
 	@echo ">>> [2/3] Terraform apply : déploiement des Helm releases..."
-	terraform apply -auto-approve $(if $(wildcard $(TF_VARS)),-var-file=$(TF_VARS),)
+	$(TF) apply -auto-approve $(if $(wildcard tf/$(TF_VARS)),-var-file=$(TF_VARS),)
 
 # Étape 2b — Export des outputs pour Ansible
 tf-outputs:
 	@echo ">>> Export des outputs Terraform pour Ansible..."
-	terraform output -json > terraform-outputs.json
+	$(TF) output -json > terraform-outputs.json
 
-# Étape 3 — Ansible : ressources post-deploy (ClusterIssuer, etc.)
+# Étape 3 — Ansible : ressources post-deploy
 ansible-post:
-	@echo ">>> [3/3] Ansible post-deploy : ClusterIssuer cert-manager..."
+	@echo ">>> [3/3] Ansible post-deploy : ClusterIssuer, demo-app, ArgoCD..."
 	ansible-playbook -i ansible/inventory.yml ansible/playbooks/post-deploy.yml
 
 # ─── Destruction rapide ───────────────────────────────────────────────────────
-# minikube delete supprime tout le cluster (et donc toutes les ressources Helm/K8s).
-# On purge ensuite le state Terraform pour que le prochain `make deploy` reparte propre.
 destroy: _check-deps ansible-teardown tf-state-purge
 	@echo ""
 	@echo "════════════════════════════════════════════════════════════"
@@ -114,7 +118,7 @@ ansible-teardown:
 
 tf-state-purge:
 	@echo ">>> [2/2] Purge du state Terraform..."
-	@rm -f terraform.tfstate terraform.tfstate.backup terraform-outputs.json
+	@rm -f state/terraform.tfstate state/terraform.tfstate.backup terraform-outputs.json
 	@echo ">>> State purgé."
 
 # ─── Utilitaires ──────────────────────────────────────────────────────────────
@@ -161,11 +165,11 @@ rollout-status: _check-k8s-deps
 
 rollout-upgrade: _check-k8s-deps
 	@echo ">>> Déploiement de la version GREEN (v2.0.0)..."
-	helm upgrade demo-app apps/demo-app \
+	helm upgrade demo-app helm/demo-app \
 		--namespace $(APP_NS) \
 		--kube-context $(CLUSTER_NAME) \
-		--values apps/demo-app/values.yaml \
-		--values apps/demo-app/values-v2.yaml \
+		--values helm/demo-app/values.yaml \
+		--values helm/demo-app/values-v2.yaml \
 		--wait
 	@echo ">>> GREEN en PREVIEW. Tester: http://preview.demo-app.local"
 	@echo "    Surveiller : make rollout-status"
@@ -207,8 +211,9 @@ app-hosts: _check-k8s-deps
 
 clean:
 	rm -f terraform-outputs.json
-	rm -rf .terraform
-	rm -f .terraform.lock.hcl
+	rm -rf tf/.terraform
+	rm -f tf/.terraform.lock.hcl
+	rm -rf tf/.terraform-helm
 
 # ─── Vérification du cluster ──────────────────────────────────────────────────
 _check-cluster:
@@ -217,9 +222,6 @@ _check-cluster:
 		     echo "       Lancez d'abord : make ansible-pre"; exit 1; }
 
 # ─── Vérification des dépendances ─────────────────────────────────────────────
-# _check-deps : vérifie uniquement les prérequis nécessaires AVANT Ansible.
-#               minikube / kubectl / helm sont installés par ansible-pre.
-# _check-k8s-deps : vérifie les outils k8s (post ansible-pre).
 _check-deps:
 	@command -v terraform        >/dev/null 2>&1 || { echo "ERREUR: terraform non trouvé.      brew install terraform"; exit 1; }
 	@command -v ansible-playbook >/dev/null 2>&1 || { echo "ERREUR: ansible non trouvé.        brew install ansible"; exit 1; }

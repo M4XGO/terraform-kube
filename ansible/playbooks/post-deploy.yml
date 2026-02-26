@@ -21,8 +21,8 @@
     git_repo_url: "{{ tf_outputs.get('git_repo_url', {}).get('value', '') }}"
     kubeconfig_path: "{{ lookup('env', 'KUBECONFIG') | default('~/.kube/config', true) }}"
     argocd_namespace: "argocd"
-    demo_app_chart: "{{ playbook_dir }}/../../apps/demo-app"
-    demo_app_values: "{{ playbook_dir }}/../../apps/demo-app/values.yaml"
+    demo_app_chart: "{{ playbook_dir }}/../../helm/demo-app"
+    demo_app_values: "{{ playbook_dir }}/../../helm/demo-app/values.yaml"
 
   tasks:
     # ── Vérifications préliminaires ─────────────────────────────────────────────

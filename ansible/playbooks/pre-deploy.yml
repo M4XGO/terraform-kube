@@ -15,7 +15,7 @@
 
   vars:
     # Valeurs par défaut (identiques à variables.tf)
-    tf_vars_file: "{{ playbook_dir }}/../../tfvars/local.tfvars"
+    tf_vars_file: "{{ playbook_dir }}/../../tf/tfvars/local.tfvars"
     cluster_name: "terraform-kube"
     kubernetes_version: "v1.29.3"
     driver: "docker"
@@ -358,15 +358,15 @@
     # pour éviter toute interférence avec les repos Helm locaux (ex: bitnami absent).
     - name: Créer les répertoires du cache Helm isolé
       ansible.builtin.file:
-        path: "{{ playbook_dir }}/../../.terraform-helm/cache"
+        path: "{{ playbook_dir }}/../../tf/.terraform-helm/cache"
         state: directory
         mode: "0755"
 
     - name: Ajouter les dépôts Helm dans le cache isolé Terraform
       ansible.builtin.command: >
         helm repo add {{ item.name }} {{ item.url }}
-          --repository-config {{ playbook_dir }}/../../.terraform-helm/repositories.yaml
-          --repository-cache  {{ playbook_dir }}/../../.terraform-helm/cache
+          --repository-config {{ playbook_dir }}/../../tf/.terraform-helm/repositories.yaml
+          --repository-cache  {{ playbook_dir }}/../../tf/.terraform-helm/cache
       loop:
         - { name: ingress-nginx,        url: "https://kubernetes.github.io/ingress-nginx" }
         - { name: jetstack,             url: "https://charts.jetstack.io" }
@@ -380,8 +380,8 @@
     - name: Mettre à jour le cache Helm isolé
       ansible.builtin.command: >
         helm repo update
-          --repository-config {{ playbook_dir }}/../../.terraform-helm/repositories.yaml
-          --repository-cache  {{ playbook_dir }}/../../.terraform-helm/cache
+          --repository-config {{ playbook_dir }}/../../tf/.terraform-helm/repositories.yaml
+          --repository-cache  {{ playbook_dir }}/../../tf/.terraform-helm/cache
       changed_when: true
 
     - name: Cluster prêt
