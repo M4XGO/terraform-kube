@@ -1,0 +1,40 @@
+---
+# ─── Teardown : suppression du cluster minikube ───────────────────────────────
+# minikube delete supprime le cluster ET toutes les ressources K8s avec lui.
+# Pas besoin de supprimer les ressources Terraform au préalable.
+# Le state Terraform est purgé par `make tf-state-purge` après ce playbook.
+#
+# Usage manuel :
+#   ansible-playbook ansible/playbooks/teardown.yml
+# ──────────────────────────────────────────────────────────────────────────────
+
+- name: Teardown du cluster minikube
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    tf_outputs_file: "{{ playbook_dir }}/../../terraform-outputs.json"
+    cluster_name: >-
+      {{
+        (lookup('file', tf_outputs_file, errors='ignore') | default('{}') | from_json)
+        .get('cluster_name', {}).get('value', 'terraform-kube')
+      }}
+
+  tasks:
+    - name: Afficher le cluster cible
+      ansible.builtin.debug:
+        msg: "Suppression du cluster : {{ cluster_name }}"
+
+    - name: Supprimer le cluster minikube
+      ansible.builtin.command: minikube delete --profile {{ cluster_name }}
+      register: minikube_delete
+      changed_when: true
+      failed_when: false
+
+    - name: Afficher la sortie minikube delete
+      ansible.builtin.debug:
+        var: minikube_delete.stdout_lines
+
+    - name: Teardown terminé
+      ansible.builtin.debug:
+        msg: "✓ Cluster '{{ cluster_name }}' supprimé."

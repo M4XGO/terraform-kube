@@ -1,0 +1,16 @@
+# ─── Version GREEN (nouveau déploiement) ─────────────────────────────────────
+# Usage : helm upgrade demo-app apps/demo-app -f apps/demo-app/values-v2.yaml
+#         kubectl argo rollouts promote demo-app -n demo-app
+
+app:
+  version: "v2.0.0"
+  colorName: "green"
+  colorHex: "#16a34a"
+  gradientStart: "#16a34a"
+  gradientEnd: "#065f46"
+  message: "Version 2.0 — Nouvelle fonctionnalité ✨"
+  features:
+    - "Interface redesignée"
+    - "Authentification MFA"
+    - "Dashboard avancé"
+    - "API v2 — performances +40%"

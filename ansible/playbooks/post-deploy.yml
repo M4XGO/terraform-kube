@@ -1,0 +1,406 @@
+---
+# ─── Post-deploy : actions après terraform apply ──────────────────────────────
+# Ce playbook est déclenché automatiquement par `make deploy`.
+# Il gère les ressources CRD-dépendantes qui ne peuvent pas être créées
+# directement par Terraform (kubernetes_manifest nécessite les CRDs au plan).
+#
+# Usage manuel :
+#   ansible-playbook ansible/playbooks/post-deploy.yml
+#   ansible-playbook ansible/playbooks/post-deploy.yml -e cluster_name=mon-cluster
+# ──────────────────────────────────────────────────────────────────────────────
+
+- name: Post-deploy Kubernetes cluster
+  hosts: localhost
+  gather_facts: true   # Nécessaire pour ansible_system (install kubectl-argo-rollouts)
+
+  vars:
+    tf_outputs_file: "{{ playbook_dir }}/../../terraform-outputs.json"
+    tf_outputs: "{{ (lookup('file', tf_outputs_file, errors='ignore') | default('{}') | from_json) }}"
+    cluster_name: "{{ tf_outputs.get('cluster_name', {}).get('value', 'terraform-kube') }}"
+    app_namespace: "{{ tf_outputs.get('app_namespace', {}).get('value', 'demo-app') }}"
+    git_repo_url: "{{ tf_outputs.get('git_repo_url', {}).get('value', '') }}"
+    kubeconfig_path: "{{ lookup('env', 'KUBECONFIG') | default('~/.kube/config', true) }}"
+    argocd_namespace: "argocd"
+    demo_app_chart: "{{ playbook_dir }}/../../apps/demo-app"
+    demo_app_values: "{{ playbook_dir }}/../../apps/demo-app/values.yaml"
+
+  tasks:
+    # ── Vérifications préliminaires ─────────────────────────────────────────────
+
+    - name: Afficher le contexte utilisé
+      ansible.builtin.debug:
+        msg: "Cluster cible : {{ cluster_name }} (kubeconfig: {{ kubeconfig_path }})"
+
+    - name: Vérifier que kubectl est disponible
+      ansible.builtin.command: kubectl version --client --output=json
+      register: kubectl_check
+      changed_when: false
+      failed_when: kubectl_check.rc != 0
+
+    - name: Vérifier la connectivité au cluster
+      kubernetes.core.k8s_info:
+        kind: Node
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+      register: nodes_info
+      retries: 5
+      delay: 10
+      until: nodes_info.resources | length > 0
+
+    - name: Afficher les nœuds disponibles
+      ansible.builtin.debug:
+        msg: "Nœud {{ item.metadata.name }} — statut: {{ item.status.conditions | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | first }}"
+      loop: "{{ nodes_info.resources }}"
+
+    # ── cert-manager : attente des CRDs ────────────────────────────────────────
+
+    - name: Attendre que les CRDs cert-manager soient disponibles
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: "{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+      loop:
+        - certificates.cert-manager.io
+        - clusterissuers.cert-manager.io
+        - issuers.cert-manager.io
+      register: crd_check
+      retries: 12
+      delay: 10
+      until: crd_check.resources | length > 0
+
+    - name: Attendre que le webhook cert-manager soit prêt
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: cert-manager-webhook
+        namespace: cert-manager
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+      register: webhook_deploy
+      retries: 12
+      delay: 10
+      until: >-
+        webhook_deploy.resources | length > 0 and
+        (webhook_deploy.resources[0].status.readyReplicas | default(0)) >= 1
+
+    # ── cert-manager : ClusterIssuer self-signed ────────────────────────────────
+
+    - name: Créer le ClusterIssuer self-signed (racine)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: selfsigned-issuer
+          spec:
+            selfSigned: {}
+
+    - name: Créer le CA Certificate auto-signé
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: selfsigned-ca
+            namespace: cert-manager
+          spec:
+            isCA: true
+            commonName: terraform-kube-ca
+            secretName: selfsigned-ca-secret
+            privateKey:
+              algorithm: ECDSA
+              size: 256
+            issuerRef:
+              name: selfsigned-issuer
+              kind: ClusterIssuer
+              group: cert-manager.io
+
+    - name: Créer le ClusterIssuer CA (pour émettre des certificats signés)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: ca-issuer
+          spec:
+            ca:
+              secretName: selfsigned-ca-secret
+
+    - name: Vérifier que les ClusterIssuers sont prêts
+      kubernetes.core.k8s_info:
+        api_version: cert-manager.io/v1
+        kind: ClusterIssuer
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+      register: issuers
+      retries: 6
+      delay: 10
+      until: >-
+        issuers.resources | selectattr('status.conditions', 'defined') |
+        map(attribute='status.conditions') | flatten |
+        selectattr('type', 'equalto', 'Ready') |
+        selectattr('status', 'equalto', 'True') | list | length >= 2
+
+    # ════════════════════════════════════════════════════════════════════════
+    #  KUBECTL ARGO ROLLOUTS PLUGIN
+    # ════════════════════════════════════════════════════════════════════════
+
+    - name: "[macOS] Installer kubectl-argo-rollouts via Homebrew"
+      community.general.homebrew:
+        name: argoproj/tap/kubectl-argo-rollouts
+        state: present
+      when: ansible_system == "Darwin"
+      ignore_errors: true
+      register: rollouts_plugin_mac
+
+    - name: "[Linux] Télécharger kubectl-argo-rollouts"
+      ansible.builtin.shell: |
+        set -e
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; elif [ "$ARCH" = "aarch64" ]; then ARCH="arm64"; fi
+        VERSION=$(curl -s https://api.github.com/repos/argoproj/argo-rollouts/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+        curl -sLo /usr/local/bin/kubectl-argo-rollouts \
+          "https://github.com/argoproj/argo-rollouts/releases/download/${VERSION}/kubectl-argo-rollouts-linux-${ARCH}"
+        chmod +x /usr/local/bin/kubectl-argo-rollouts
+      become: true
+      when: ansible_system == "Linux"
+      args:
+        creates: /usr/local/bin/kubectl-argo-rollouts
+
+    - name: Vérifier kubectl-argo-rollouts
+      ansible.builtin.command: kubectl argo rollouts version
+      register: rollouts_version
+      changed_when: false
+      failed_when: false
+
+    - name: Afficher la version du plugin Argo Rollouts
+      ansible.builtin.debug:
+        msg: "kubectl-argo-rollouts : {{ rollouts_version.stdout_lines[0] | default('non disponible') }}"
+
+    # ════════════════════════════════════════════════════════════════════════
+    #  SERVICEMONITOR — ingress-nginx → Prometheus
+    # ════════════════════════════════════════════════════════════════════════
+
+    - name: Vérifier que kube-prometheus-stack est déployé
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: kube-prometheus-stack-operator
+        namespace: monitoring
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+      register: prometheus_operator
+      failed_when: false
+
+    - name: Créer le ServiceMonitor pour ingress-nginx
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+        state: present
+        definition:
+          apiVersion: monitoring.coreos.com/v1
+          kind: ServiceMonitor
+          metadata:
+            name: ingress-nginx
+            namespace: monitoring
+            labels:
+              release: kube-prometheus-stack
+              app.kubernetes.io/name: ingress-nginx
+          spec:
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: ingress-nginx
+            namespaceSelector:
+              matchNames:
+                - ingress-nginx
+            endpoints:
+              - port: metrics
+                interval: 30s
+                path: /metrics
+      when: prometheus_operator.resources | length > 0
+
+    # ════════════════════════════════════════════════════════════════════════
+    #  ARGOCD — AppProject
+    # ════════════════════════════════════════════════════════════════════════
+
+    - name: Attendre qu'ArgoCD server soit disponible
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: argocd-server
+        namespace: "{{ argocd_namespace }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+      register: argocd_server
+      retries: 10
+      delay: 15
+      until: >-
+        argocd_server.resources | length > 0 and
+        (argocd_server.resources[0].status.readyReplicas | default(0)) >= 1
+
+    - name: Créer l'ArgoCD AppProject 'demo'
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: AppProject
+          metadata:
+            name: demo
+            namespace: "{{ argocd_namespace }}"
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            description: "Projet demo — Blue/Green avec Argo Rollouts"
+            sourceRepos:
+              - "*"
+            destinations:
+              - namespace: "{{ app_namespace }}"
+                server: https://kubernetes.default.svc
+            clusterResourceWhitelist:
+              - group: "*"
+                kind: Namespace
+            namespaceResourceWhitelist:
+              - group: "*"
+                kind: "*"
+            orphanedResources:
+              warn: true
+
+    # ════════════════════════════════════════════════════════════════════════
+    #  DEMO-APP — déploiement initial + ArgoCD Application
+    #
+    #  Deux modes :
+    #  ┌─────────────────────────────────────────────────────────────────┐
+    #  │ Mode LOCAL (git_repo_url = "")                                  │
+    #  │   → Ansible déploie apps/demo-app via helm (BLUE v1)           │
+    #  │   → Argo Rollouts gère le Blue/Green                           │
+    #  │   → make rollout-upgrade déclenche la version GREEN            │
+    #  │   → ArgoCD dashboard : visible mais pas en mode sync auto      │
+    #  ├─────────────────────────────────────────────────────────────────┤
+    #  │ Mode GitOps (git_repo_url défini)                               │
+    #  │   → ArgoCD Application depuis Git (apps/demo-app/)             │
+    #  │   → ArgoCD est le seul owner du Rollout                        │
+    #  │   → Changer values.yaml dans Git → ArgoCD sync → Argo Rollouts │
+    #  └─────────────────────────────────────────────────────────────────┘
+    # ════════════════════════════════════════════════════════════════════
+
+    # ── Mode LOCAL : Ansible déploie le chart directement ──────────────────────
+
+    - name: Attendre que les CRDs Argo Rollouts soient disponibles
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: rollouts.argoproj.io
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+      register: rollout_crd
+      retries: 12
+      delay: 10
+      until: rollout_crd.resources | length > 0
+
+    - name: "[Mode local] Déployer demo-app v1 (BLUE) via Helm"
+      kubernetes.core.helm:
+        name: demo-app
+        chart_ref: "{{ demo_app_chart }}"
+        release_namespace: "{{ app_namespace }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+        values_files:
+          - "{{ demo_app_values }}"
+        wait: true
+        wait_timeout: "3m"
+      when: git_repo_url == ""
+
+    # ── Mode GitOps : ArgoCD Application depuis Git ─────────────────────────────
+
+    - name: "[Mode GitOps] Créer l'ArgoCD Application 'demo-app'"
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        context: "{{ cluster_name }}"
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: demo-app
+            namespace: "{{ argocd_namespace }}"
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+            annotations:
+              argocd.argoproj.io/sync-wave: "0"
+          spec:
+            project: demo
+            source:
+              repoURL: "{{ git_repo_url }}"
+              targetRevision: HEAD
+              path: apps/demo-app
+              helm:
+                releaseName: demo-app
+                valueFiles:
+                  - values.yaml
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: "{{ app_namespace }}"
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+                allowEmpty: false
+              syncOptions:
+                - CreateNamespace=true
+                - PrunePropagationPolicy=foreground
+                - RespectIgnoreDifferences=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+            # Ignorer les champs gérés par Argo Rollouts (status, pause conditions)
+            ignoreDifferences:
+              - group: argoproj.io
+                kind: Rollout
+                jsonPointers:
+                  - /status
+                  - /spec/paused
+      when: git_repo_url != ""
+
+    # ── Résumé ──────────────────────────────────────────────────────────────────
+
+    - name: Résumé post-deploy
+      ansible.builtin.debug:
+        msg:
+          - "✓ Cluster : {{ cluster_name }}"
+          - "✓ ClusterIssuers cert-manager : selfsigned-issuer, ca-issuer"
+          - "✓ ServiceMonitor ingress-nginx créé"
+          - "✓ ArgoCD AppProject 'demo' créé"
+          - "✓ kubectl-argo-rollouts installé"
+          - ""
+          - "Mode : {{ 'GitOps (ArgoCD → Git → Rollout)' if git_repo_url != '' else 'Local (Ansible → Helm → Rollout)' }}"
+          - ""
+          - "Blue/Green :"
+          - "  make rollout-status    # Surveiller le Rollout"
+          - "  make rollout-upgrade   # Déployer la version GREEN (v2)"
+          - "  make rollout-promote   # Promouvoir en production"
+          - "  make app-hosts         # Configurer /etc/hosts"
+          - ""
+          - "Port-forwards :"
+          - "  make port-forwards"
+          - ""
+          - "{% if git_repo_url != '' %}"
+          - "GitOps : modifier apps/demo-app/values.yaml → git commit + push → ArgoCD sync → Blue/Green"
+          - "{% else %}"
+          - "Pour activer le mode GitOps : définir git_repo_url dans tfvars/local.tfvars"
+          - "{% endif %}"

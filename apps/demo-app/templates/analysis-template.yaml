@@ -1,0 +1,95 @@
+{{- if .Values.analysis.enabled }}
+# ─── AnalysisTemplate : validation automatique pre-promotion ──────────────────
+# Argo Rollouts exécute ces métriques Prometheus sur le service PREVIEW
+# avant de promouvoir en production.
+#
+# Critères de succès :
+#   - Taux de succès HTTP >= {{ .Values.analysis.successRateThreshold }}
+#   - Latence P99 <= {{ .Values.analysis.latencyP99Threshold }}s
+#
+# En cas d'échec : rollback automatique vers la version blue.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: {{ include "demo-app.fullname" . }}-success-rate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  args:
+    - name: service-name
+    - name: namespace
+
+  metrics:
+    # ── Taux de succès HTTP ────────────────────────────────────────────────────
+    - name: http-success-rate
+      interval: {{ .Values.analysis.interval }}
+      count: {{ .Values.analysis.count }}
+      failureLimit: {{ .Values.analysis.failureLimit }}
+      # Succès si le taux >= seuil configuré (ex: 0.90 = 90%)
+      # Résultat "nan" (pas de trafic) considéré comme succès pour éviter
+      # un faux-positif sur un nouveau déploiement sans trafic
+      successCondition: "isNaN(result[0]) || result[0] >= {{ .Values.analysis.successRateThreshold }}"
+      provider:
+        prometheus:
+          address: {{ .Values.analysis.prometheusAddress }}
+          query: |
+            sum(rate(
+              nginx_ingress_controller_requests{
+                exported_service="{{`{{args.service-name}}`}}",
+                exported_namespace="{{`{{args.namespace}}`}}",
+                status!~"[4-5].*"
+              }[2m]
+            )) /
+            sum(rate(
+              nginx_ingress_controller_requests{
+                exported_service="{{`{{args.service-name}}`}}",
+                exported_namespace="{{`{{args.namespace}}`}}"
+              }[2m]
+            )) or vector(0/0)
+
+    # ── Latence P99 ───────────────────────────────────────────────────────────
+    - name: latency-p99
+      interval: {{ .Values.analysis.interval }}
+      count: {{ .Values.analysis.count }}
+      failureLimit: {{ .Values.analysis.failureLimit }}
+      # Succès si P99 <= seuil (ex: 1.0s) ou pas de données
+      successCondition: "isNaN(result[0]) || result[0] <= {{ .Values.analysis.latencyP99Threshold }}"
+      provider:
+        prometheus:
+          address: {{ .Values.analysis.prometheusAddress }}
+          query: |
+            histogram_quantile(0.99,
+              sum(rate(
+                nginx_ingress_controller_request_duration_seconds_bucket{
+                  exported_service="{{`{{args.service-name}}`}}",
+                  exported_namespace="{{`{{args.namespace}}`}}"
+                }[2m]
+              )) by (le)
+            ) or vector(0/0)
+
+    # ── Erreurs 5xx ───────────────────────────────────────────────────────────
+    - name: error-rate-5xx
+      interval: {{ .Values.analysis.interval }}
+      count: {{ .Values.analysis.count }}
+      failureLimit: {{ .Values.analysis.failureLimit }}
+      # Succès si taux d'erreurs 5xx < 5%
+      successCondition: "isNaN(result[0]) || result[0] < 0.05"
+      provider:
+        prometheus:
+          address: {{ .Values.analysis.prometheusAddress }}
+          query: |
+            sum(rate(
+              nginx_ingress_controller_requests{
+                exported_service="{{`{{args.service-name}}`}}",
+                exported_namespace="{{`{{args.namespace}}`}}",
+                status=~"5.*"
+              }[2m]
+            )) /
+            sum(rate(
+              nginx_ingress_controller_requests{
+                exported_service="{{`{{args.service-name}}`}}",
+                exported_namespace="{{`{{args.namespace}}`}}"
+              }[2m]
+            )) or vector(0/0)
+{{- end }}

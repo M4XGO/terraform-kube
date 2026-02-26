@@ -1,0 +1,25 @@
+# Service ACTIF — reçoit le trafic de production.
+# Argo Rollouts met à jour automatiquement ce selector lors d'une promotion.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "demo-app.fullname" . }}-active
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: active
+  annotations:
+    # Activé par ServiceMonitor Prometheus (ajouté par Ansible post-deploy)
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "80"
+spec:
+  type: ClusterIP
+  # NOTE : Argo Rollouts gère ce selector automatiquement.
+  # Ne pas ajouter de selector version ici.
+  selector:
+    {{- include "demo-app.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

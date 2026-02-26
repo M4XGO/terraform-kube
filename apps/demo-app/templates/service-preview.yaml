@@ -1,0 +1,23 @@
+# Service PREVIEW — pointe vers la nouvelle version en cours de validation.
+# Accessible sur preview.demo-app.local pour tests avant promotion.
+# Argo Rollouts bascule ce selector sur le nouveau ReplicaSet.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "demo-app.fullname" . }}-preview
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: preview
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "80"
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "demo-app.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
