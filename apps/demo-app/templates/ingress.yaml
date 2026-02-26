@@ -1,0 +1,53 @@
+{{- if .Values.ingress.enabled }}
+# ─── Ingress PRODUCTION (version active) ──────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "demo-app.fullname" . }}-active
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingress-active
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "demo-app.fullname" . }}-active
+                port:
+                  name: http
+---
+# ─── Ingress PREVIEW (nouvelle version en cours de test) ──────────────────────
+# Accessible sur preview.<host> pendant la fenêtre de validation.
+# Utilisé par l'AnalysisTemplate pour générer du trafic test.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "demo-app.fullname" . }}-preview
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingress-preview
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  rules:
+    - host: {{ printf "preview.%s" .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "demo-app.fullname" . }}-preview
+                port:
+                  name: http
+{{- end }}

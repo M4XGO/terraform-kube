@@ -1,0 +1,190 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "demo-app.fullname" . }}-html
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+  annotations:
+    # Forcer le redéploiement du Rollout si le contenu change
+    app.kubernetes.io/version: {{ .Values.app.version | quote }}
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Demo App — {{ .Values.app.version }}</title>
+      <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+          min-height: 100vh;
+          display: grid;
+          place-items: center;
+          background: linear-gradient(135deg, {{ .Values.app.gradientStart }}, {{ .Values.app.gradientEnd }});
+          color: #fff;
+        }
+
+        .card {
+          width: min(520px, 92vw);
+          background: rgba(255, 255, 255, 0.12);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: 20px;
+          padding: 2.5rem 2rem;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .header {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          margin-bottom: 1.5rem;
+        }
+
+        .badge {
+          background: rgba(255, 255, 255, 0.25);
+          border: 1px solid rgba(255, 255, 255, 0.4);
+          border-radius: 999px;
+          padding: 0.35rem 0.9rem;
+          font-size: 0.75rem;
+          font-weight: 700;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+        }
+
+        .version {
+          font-size: 0.85rem;
+          opacity: 0.75;
+          font-weight: 500;
+        }
+
+        h1 {
+          font-size: clamp(1.8rem, 5vw, 2.4rem);
+          font-weight: 800;
+          letter-spacing: -0.5px;
+          margin-bottom: 0.4rem;
+        }
+
+        .subtitle {
+          font-size: 1rem;
+          opacity: 0.85;
+          margin-bottom: 2rem;
+        }
+
+        .features {
+          list-style: none;
+          display: grid;
+          gap: 0.6rem;
+          margin-bottom: 2rem;
+        }
+
+        .features li {
+          display: flex;
+          align-items: center;
+          gap: 0.6rem;
+          font-size: 0.9rem;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          padding: 0.6rem 0.9rem;
+        }
+
+        .features li::before {
+          content: "✓";
+          font-weight: 700;
+          font-size: 0.8rem;
+          background: rgba(255, 255, 255, 0.3);
+          border-radius: 50%;
+          width: 1.4rem;
+          height: 1.4rem;
+          display: grid;
+          place-items: center;
+          flex-shrink: 0;
+        }
+
+        .meta {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 0.75rem;
+        }
+
+        .meta-item {
+          background: rgba(0, 0, 0, 0.15);
+          border-radius: 10px;
+          padding: 0.75rem;
+        }
+
+        .meta-label {
+          font-size: 0.65rem;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          opacity: 0.65;
+          margin-bottom: 0.25rem;
+        }
+
+        .meta-value {
+          font-size: 0.9rem;
+          font-weight: 600;
+        }
+
+        .ping {
+          display: inline-block;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #4ade80;
+          margin-right: 0.4rem;
+          box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.6);
+          animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+          0%   { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.6); }
+          70%  { box-shadow: 0 0 0 8px rgba(74, 222, 128, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="header">
+          <span class="badge">{{ .Values.app.colorName }}</span>
+          <span class="version">{{ .Values.app.version }}</span>
+        </div>
+
+        <h1>Demo App</h1>
+        <p class="subtitle">
+          <span class="ping"></span>{{ .Values.app.message }}
+        </p>
+
+        <ul class="features">
+          {{- range .Values.app.features }}
+          <li>{{ . }}</li>
+          {{- end }}
+        </ul>
+
+        <div class="meta">
+          <div class="meta-item">
+            <div class="meta-label">Stratégie</div>
+            <div class="meta-value">Blue / Green</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Namespace</div>
+            <div class="meta-value">{{ .Release.Namespace }}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Chart</div>
+            <div class="meta-value">v{{ .Chart.Version }}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Runtime</div>
+            <div class="meta-value">Kubernetes</div>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>

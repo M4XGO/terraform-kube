@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(terraform fmt -recursive 2>&1)",
+      "Bash(helm search repo ingress-nginx/ingress-nginx --repository-config .terraform-helm/repositories.yaml --repository-cache .terraform-helm/cache 2>/dev/null | head -2 && \\\\\nhelm search repo jetstack/cert-manager --repository-config .terraform-helm/repositories.yaml --repository-cache .terraform-helm/cache 2>/dev/null | head -2 && \\\\\nhelm search repo argo/argo-cd --repository-config .terraform-helm/repositories.yaml --repository-cache .terraform-helm/cache 2>/dev/null | head -2 && \\\\\nhelm search repo argo/argo-rollouts --repository-config .terraform-helm/repositories.yaml --repository-cache .terraform-helm/cache 2>/dev/null | head -2 && \\\\\nhelm search repo cilium/cilium --repository-config .terraform-helm/repositories.yaml --repository-cache .terraform-helm/cache 2>/dev/null | head -2)",
+      "Bash(terraform state rm 'module.apps[0].helm_release.demo_app' 2>&1)"
+    ]
+  }
+}

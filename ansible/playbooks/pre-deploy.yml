@@ -1,0 +1,394 @@
+---
+# ─── Pre-deploy : installation des dépendances + provisionnement minikube ─────
+# Ce playbook :
+#   1. Détecte l'OS et installe les prérequis manquants (minikube, kubectl, helm)
+#   2. Démarre le cluster minikube avec la configuration définie dans tfvars
+#
+# Usage :
+#   ansible-playbook ansible/playbooks/pre-deploy.yml
+#   ansible-playbook ansible/playbooks/pre-deploy.yml -e cluster_name=mon-cluster
+# ──────────────────────────────────────────────────────────────────────────────
+
+- name: Installer les dépendances et provisionner le cluster minikube
+  hosts: localhost
+  gather_facts: true   # Nécessaire pour ansible_os_family, ansible_system
+
+  vars:
+    # Valeurs par défaut (identiques à variables.tf)
+    tf_vars_file: "{{ playbook_dir }}/../../tfvars/local.tfvars"
+    cluster_name: "terraform-kube"
+    kubernetes_version: "v1.29.3"
+    driver: "docker"
+    cpus: 4
+    memory: 8192
+    disk_size: "20g"
+    enable_cilium: false
+
+  pre_tasks:
+    # ── Lecture des variables depuis tfvars ──────────────────────────────────
+
+    - name: Charger les variables depuis tfvars
+      ansible.builtin.set_fact:
+        tf_vars: "{{ lookup('file', tf_vars_file, errors='ignore') | default('', true) }}"
+
+    - name: Extraire cluster_name
+      ansible.builtin.set_fact:
+        cluster_name: "{{ tf_vars | regex_search('cluster_name\\s*=\\s*\"([^\"]+)\"', '\\1') | first | default(cluster_name) }}"
+      when: tf_vars != ''
+
+    - name: Extraire kubernetes_version
+      ansible.builtin.set_fact:
+        kubernetes_version: "{{ tf_vars | regex_search('kubernetes_version\\s*=\\s*\"([^\"]+)\"', '\\1') | first | default(kubernetes_version) }}"
+      when: tf_vars != ''
+
+    - name: Extraire driver
+      ansible.builtin.set_fact:
+        driver: "{{ tf_vars | regex_search('driver\\s*=\\s*\"([^\"]+)\"', '\\1') | first | default(driver) }}"
+      when: tf_vars != ''
+
+    - name: Extraire memory
+      ansible.builtin.set_fact:
+        memory: "{{ tf_vars | regex_search('memory\\s*=\\s*(\\d+)', '\\1') | first | default(memory) | int }}"
+      when: tf_vars != ''
+
+    - name: Extraire cpus
+      ansible.builtin.set_fact:
+        cpus: "{{ tf_vars | regex_search('cpus\\s*=\\s*(\\d+)', '\\1') | first | default(cpus) | int }}"
+      when: tf_vars != ''
+
+    - name: Extraire disk_size
+      ansible.builtin.set_fact:
+        disk_size: "{{ tf_vars | regex_search('disk_size\\s*=\\s*\"([^\"]+)\"', '\\1') | first | default(disk_size) }}"
+      when: tf_vars != ''
+
+    - name: Extraire enable_cilium
+      ansible.builtin.set_fact:
+        enable_cilium: "{{ tf_vars | regex_search('enable_cilium\\s*=\\s*(true|false)', '\\1') | first | default('false') | bool }}"
+      when: tf_vars != ''
+
+  tasks:
+    # ════════════════════════════════════════════════════════════════════════
+    #  INSTALLATION DES DÉPENDANCES
+    # ════════════════════════════════════════════════════════════════════════
+
+    # ── macOS — Homebrew ─────────────────────────────────────────────────────
+
+    - name: "[macOS] Vérifier que Homebrew est installé"
+      ansible.builtin.command: brew --version
+      register: brew_check
+      changed_when: false
+      failed_when: brew_check.rc != 0
+      when: ansible_system == "Darwin"
+
+    - name: "[macOS] Installer minikube via Homebrew"
+      community.general.homebrew:
+        name: minikube
+        state: present
+      when:
+        - ansible_system == "Darwin"
+        - ansible_facts.packages is not defined or 'minikube' not in ansible_facts.packages
+      register: minikube_brew_install
+      ignore_errors: true   # Fallback sur le check manuel
+
+    - name: "[macOS] Vérifier minikube après install Homebrew"
+      ansible.builtin.command: minikube version
+      register: minikube_check_mac
+      changed_when: false
+      when: ansible_system == "Darwin"
+
+    - name: "[macOS] Installer kubectl via Homebrew"
+      community.general.homebrew:
+        name: kubectl
+        state: present
+      when: ansible_system == "Darwin"
+
+    - name: "[macOS] Installer helm via Homebrew"
+      community.general.homebrew:
+        name: helm
+        state: present
+      when: ansible_system == "Darwin"
+
+    - name: "[macOS] Installer docker via Homebrew Cask (si absent)"
+      community.general.homebrew_cask:
+        name: docker
+        state: present
+      when:
+        - ansible_system == "Darwin"
+        - driver == "docker"
+      register: docker_cask_install
+      ignore_errors: true   # Docker Desktop peut déjà être installé autrement
+
+    # ── Linux — apt (Debian/Ubuntu) ──────────────────────────────────────────
+
+    - name: "[Linux/apt] Installer les dépendances de base"
+      ansible.builtin.apt:
+        name:
+          - curl
+          - apt-transport-https
+          - ca-certificates
+          - gnupg
+        state: present
+        update_cache: true
+      become: true
+      when:
+        - ansible_system == "Linux"
+        - ansible_os_family == "Debian"
+
+    - name: "[Linux/apt] Télécharger et installer minikube"
+      ansible.builtin.shell: |
+        set -e
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; elif [ "$ARCH" = "aarch64" ]; then ARCH="arm64"; fi
+        curl -sLo /tmp/minikube "https://storage.googleapis.com/minikube/releases/latest/minikube-linux-$ARCH"
+        install /tmp/minikube /usr/local/bin/minikube
+        rm /tmp/minikube
+      become: true
+      when:
+        - ansible_system == "Linux"
+        - ansible_os_family == "Debian"
+      args:
+        creates: /usr/local/bin/minikube
+
+    - name: "[Linux/apt] Installer kubectl"
+      ansible.builtin.shell: |
+        set -e
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key \
+          | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' \
+          > /etc/apt/sources.list.d/kubernetes.list
+        apt-get update -q
+        apt-get install -y kubectl
+      become: true
+      when:
+        - ansible_system == "Linux"
+        - ansible_os_family == "Debian"
+      args:
+        creates: /usr/bin/kubectl
+
+    - name: "[Linux/apt] Installer helm"
+      ansible.builtin.shell: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      become: true
+      when:
+        - ansible_system == "Linux"
+        - ansible_os_family == "Debian"
+      args:
+        creates: /usr/local/bin/helm
+
+    # ── Linux — dnf/yum (RHEL/Fedora) ───────────────────────────────────────
+
+    - name: "[Linux/dnf] Télécharger et installer minikube"
+      ansible.builtin.shell: |
+        set -e
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; elif [ "$ARCH" = "aarch64" ]; then ARCH="arm64"; fi
+        curl -sLo /tmp/minikube "https://storage.googleapis.com/minikube/releases/latest/minikube-linux-$ARCH"
+        install /tmp/minikube /usr/local/bin/minikube
+        rm /tmp/minikube
+      become: true
+      when:
+        - ansible_system == "Linux"
+        - ansible_os_family == "RedHat"
+      args:
+        creates: /usr/local/bin/minikube
+
+    - name: "[Linux/dnf] Installer kubectl"
+      ansible.builtin.shell: |
+        cat > /etc/yum.repos.d/kubernetes.repo <<EOF
+        [kubernetes]
+        name=Kubernetes
+        baseurl=https://pkgs.k8s.io/core:/stable:/v1.29/rpm/
+        enabled=1
+        gpgcheck=1
+        gpgkey=https://pkgs.k8s.io/core:/stable:/v1.29/rpm/repodata/repomd.xml.key
+        EOF
+        dnf install -y kubectl
+      become: true
+      when:
+        - ansible_system == "Linux"
+        - ansible_os_family == "RedHat"
+      args:
+        creates: /usr/bin/kubectl
+
+    - name: "[Linux/dnf] Installer helm"
+      ansible.builtin.shell: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      become: true
+      when:
+        - ansible_system == "Linux"
+        - ansible_os_family == "RedHat"
+      args:
+        creates: /usr/local/bin/helm
+
+    # ── Vérifications finales des dépendances ────────────────────────────────
+
+    - name: Vérifier que minikube est disponible
+      ansible.builtin.command: minikube version
+      register: minikube_version
+      changed_when: false
+
+    - name: Vérifier que kubectl est disponible
+      ansible.builtin.command: kubectl version --client --output=json
+      register: kubectl_version
+      changed_when: false
+
+    - name: Vérifier que helm est disponible
+      ansible.builtin.command: helm version --short
+      register: helm_version
+      changed_when: false
+
+    - name: Vérifier que Docker est disponible
+      ansible.builtin.command: docker info
+      register: docker_info
+      changed_when: false
+      failed_when: docker_info.rc != 0
+      when: driver == "docker"
+
+    - name: Afficher les versions installées
+      ansible.builtin.debug:
+        msg:
+          - "minikube : {{ minikube_version.stdout_lines[0] }}"
+          - "kubectl  : {{ (kubectl_version.stdout | from_json).clientVersion.gitVersion }}"
+          - "helm     : {{ helm_version.stdout }}"
+
+    # ════════════════════════════════════════════════════════════════════════
+    #  PROVISIONNEMENT DU CLUSTER
+    # ════════════════════════════════════════════════════════════════════════
+
+    - name: Afficher la configuration cible
+      ansible.builtin.debug:
+        msg:
+          - "Cluster     : {{ cluster_name }}"
+          - "Driver      : {{ driver }}"
+          - "Kubernetes  : {{ kubernetes_version }}"
+          - "CPUs        : {{ cpus }}"
+          - "Mémoire     : {{ memory }} Mo"
+          - "Disque      : {{ disk_size }}"
+          - "Cilium CNI  : {{ enable_cilium }}"
+
+    - name: Vérifier l'état actuel du cluster
+      ansible.builtin.command: minikube status --profile {{ cluster_name }} --format "{{ '{{' }}.Host{{ '}}' }}"
+      register: minikube_status
+      changed_when: false
+      failed_when: false
+
+    - name: Cluster déjà en cours d'exécution
+      ansible.builtin.debug:
+        msg: "Cluster '{{ cluster_name }}' déjà Running — passage au suivant."
+      when: minikube_status.stdout | trim == "Running"
+
+    # Vérifier la mémoire disponible côté Docker (macOS) pour éviter MK_USAGE
+    - name: Récupérer la mémoire disponible Docker Desktop
+      ansible.builtin.shell: |
+        docker info --format '{{ "{{" }}.MemTotal{{ "}}" }}' 2>/dev/null || echo "0"
+      register: docker_mem_bytes
+      changed_when: false
+      when: driver == "docker"
+
+    - name: Calculer la mémoire safe pour minikube (80% du max Docker, min 2048)
+      ansible.builtin.set_fact:
+        minikube_memory: >-
+          {{
+            [
+              [
+                (docker_mem_bytes.stdout | int // 1048576 * 80 // 100),
+                2048
+              ] | max,
+              memory | int
+            ] | min
+          }}
+      when: driver == "docker"
+
+    - name: Utiliser la mémoire configurée pour les autres drivers
+      ansible.builtin.set_fact:
+        minikube_memory: "{{ memory }}"
+      when: driver != "docker"
+
+    - name: Afficher la mémoire allouée à minikube
+      ansible.builtin.debug:
+        msg: "Mémoire minikube : {{ minikube_memory }} Mo (demandé: {{ memory }} Mo, disponible Docker: {{ (docker_mem_bytes.stdout | default('0') | int // 1048576) }} Mo)"
+      when: driver == "docker"
+
+    - name: Démarrer le cluster minikube
+      ansible.builtin.command: >
+        minikube start
+          --profile={{ cluster_name }}
+          --driver={{ driver }}
+          --kubernetes-version={{ kubernetes_version }}
+          --cpus={{ cpus }}
+          --memory={{ minikube_memory }}
+          --disk-size={{ disk_size }}
+          --embed-certs=true
+          --addons=metrics-server
+          {{ '--cni=false' if enable_cilium else '' }}
+      register: minikube_start
+      changed_when: true
+      when: minikube_status.stdout | trim != "Running"
+
+    - name: Afficher la sortie minikube start
+      ansible.builtin.debug:
+        var: minikube_start.stdout_lines
+      when: minikube_start is changed
+
+    - name: Définir le contexte kubectl actif
+      ansible.builtin.command: kubectl config use-context {{ cluster_name }}
+      changed_when: true
+
+    - name: Attendre que les nœuds soient Ready
+      ansible.builtin.command: >
+        kubectl wait --for=condition=Ready nodes --all
+          --timeout=300s
+          --context={{ cluster_name }}
+      changed_when: false
+
+    - name: Afficher les nœuds
+      ansible.builtin.command: kubectl get nodes -o wide --context={{ cluster_name }}
+      register: nodes_output
+      changed_when: false
+
+    - name: État des nœuds
+      ansible.builtin.debug:
+        var: nodes_output.stdout_lines
+
+    # ════════════════════════════════════════════════════════════════════════
+    #  DÉPÔTS HELM (requis par le provider Terraform Helm)
+    # ════════════════════════════════════════════════════════════════════════
+
+    # Le provider Terraform Helm utilise un cache isolé (.terraform-helm/)
+    # pour éviter toute interférence avec les repos Helm locaux (ex: bitnami absent).
+    - name: Créer les répertoires du cache Helm isolé
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../../.terraform-helm/cache"
+        state: directory
+        mode: "0755"
+
+    - name: Ajouter les dépôts Helm dans le cache isolé Terraform
+      ansible.builtin.command: >
+        helm repo add {{ item.name }} {{ item.url }}
+          --repository-config {{ playbook_dir }}/../../.terraform-helm/repositories.yaml
+          --repository-cache  {{ playbook_dir }}/../../.terraform-helm/cache
+      loop:
+        - { name: ingress-nginx,        url: "https://kubernetes.github.io/ingress-nginx" }
+        - { name: jetstack,             url: "https://charts.jetstack.io" }
+        - { name: prometheus-community, url: "https://prometheus-community.github.io/helm-charts" }
+        - { name: argo,                 url: "https://argoproj.github.io/argo-helm" }
+        - { name: cilium,               url: "https://helm.cilium.io/" }
+      register: helm_repo_add
+      changed_when: "'already exists' not in helm_repo_add.stderr"
+      failed_when: helm_repo_add.rc != 0 and 'already exists' not in helm_repo_add.stderr
+
+    - name: Mettre à jour le cache Helm isolé
+      ansible.builtin.command: >
+        helm repo update
+          --repository-config {{ playbook_dir }}/../../.terraform-helm/repositories.yaml
+          --repository-cache  {{ playbook_dir }}/../../.terraform-helm/cache
+      changed_when: true
+
+    - name: Cluster prêt
+      ansible.builtin.debug:
+        msg:
+          - "✓ Cluster '{{ cluster_name }}' opérationnel"
+          - "✓ Contexte kubectl actif : {{ cluster_name }}"
+          - "✓ Dépôts Helm synchronisés"
+          - ""
+          - "Prochaine étape : terraform apply (géré automatiquement par make deploy)"

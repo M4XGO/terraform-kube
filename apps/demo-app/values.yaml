@@ -1,0 +1,55 @@
+# ─── Version BLUE (production initiale) ──────────────────────────────────────
+
+replicaCount: 2
+
+image:
+  repository: nginx
+  tag: "1.25-alpine"
+  pullPolicy: IfNotPresent
+
+app:
+  version: "v1.0.0"
+  colorName: "blue"
+  colorHex: "#1a6cf5"
+  gradientStart: "#1a6cf5"
+  gradientEnd: "#0d3fa3"
+  message: "Version 1.0 — Production"
+  features:
+    - "Interface de base"
+    - "Authentification utilisateur"
+    - "Dashboard principal"
+
+service:
+  port: 80
+
+ingress:
+  enabled: true
+  className: "nginx"
+  host: "demo-app.local"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "8m"
+
+# ─── Argo Rollouts blue/green ─────────────────────────────────────────────────
+rollout:
+  # false = promotion manuelle (idéal pour démo)
+  # true  = promotion auto si l'analyse Prometheus réussit
+  autoPromotionEnabled: false
+  # Délai avant scale-down de l'ancienne version après promotion
+  scaleDownDelaySeconds: 60
+  # Réplicas pour le pod preview (économie de ressources)
+  previewReplicaCount: 1
+
+# ─── AnalysisTemplate Prometheus ─────────────────────────────────────────────
+analysis:
+  enabled: true
+  prometheusAddress: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+  # Intervalle entre chaque mesure
+  interval: "30s"
+  # Nombre de mesures avant décision
+  count: 3
+  # Taux de succès HTTP minimum (0.0 → 1.0)
+  successRateThreshold: "0.90"
+  # Latence P99 maximum en secondes
+  latencyP99Threshold: "1.0"
+  # Nombre d'échecs tolérés avant abort automatique
+  failureLimit: 1
