@@ -1,7 +1,7 @@
 # ─── Terraform ────────────────────────────────────────────────────────────────
-tf/.terraform/
-tf/.terraform.lock.hcl
-tf/.terraform-helm/
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/.terraform-helm/
 
 # State (dossier dédié)
 state/terraform.tfstate

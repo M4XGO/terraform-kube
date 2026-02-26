@@ -5,8 +5,8 @@
 
 CLUSTER_NAME ?= terraform-kube
 
-# Terraform s'exécute depuis tf/ via -chdir
-TF      = terraform -chdir=tf
+# Terraform s'exécute depuis terraform/ via -chdir
+TF      = terraform -chdir=terraform
 # TF_VARS est relatif à tf/ (ex: tfvars/local.tfvars → tf/tfvars/local.tfvars)
 TF_VARS ?= tfvars/local.tfvars
 
@@ -61,7 +61,7 @@ init:
 	$(TF) init -upgrade
 	@echo ">>> Installation des collections Ansible..."
 	ansible-galaxy collection install -r ansible/requirements.yml
-	@test -f tf/$(TF_VARS) && echo ">>> Fichier de variables : tf/$(TF_VARS)" || echo ">>> ATTENTION : tf/$(TF_VARS) non trouvé."
+	@test -f terraform/$(TF_VARS) && echo ">>> Fichier de variables : terraform/$(TF_VARS)" || echo ">>> ATTENTION : terraform/$(TF_VARS) non trouvé."
 	@echo ""
 	@echo ">>> Initialisation terminée. Lancez : make deploy"
 
@@ -72,7 +72,7 @@ validate:
 
 # ─── Plan ─────────────────────────────────────────────────────────────────────
 plan: _check-deps _check-k8s-deps _check-cluster
-	$(TF) plan $(if $(wildcard tf/$(TF_VARS)),-var-file=$(TF_VARS),)
+	$(TF) plan $(if $(wildcard terraform/$(TF_VARS)),-var-file=$(TF_VARS),)
 
 # ─── Déploiement complet ──────────────────────────────────────────────────────
 deploy: _check-deps ansible-pre tf-apply tf-outputs ansible-post
@@ -92,7 +92,7 @@ ansible-pre: _check-deps
 # Étape 2a — Terraform apply
 tf-apply: _check-deps
 	@echo ">>> [2/3] Terraform apply : déploiement des Helm releases..."
-	$(TF) apply -auto-approve $(if $(wildcard tf/$(TF_VARS)),-var-file=$(TF_VARS),)
+	$(TF) apply -auto-approve $(if $(wildcard terraform/$(TF_VARS)),-var-file=$(TF_VARS),)
 
 # Étape 2b — Export des outputs pour Ansible
 tf-outputs:
@@ -211,9 +211,9 @@ app-hosts: _check-k8s-deps
 
 clean:
 	rm -f terraform-outputs.json
-	rm -rf tf/.terraform
-	rm -f tf/.terraform.lock.hcl
-	rm -rf tf/.terraform-helm
+	rm -rf terraform/.terraform
+	rm -f terraform/.terraform.lock.hcl
+	rm -rf terraform/.terraform-helm
 
 # ─── Vérification du cluster ──────────────────────────────────────────────────
 _check-cluster:
