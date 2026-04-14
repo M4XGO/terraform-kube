@@ -297,7 +297,7 @@
     #  │   → ArgoCD dashboard : visible mais pas en mode sync auto      │
     #  ├─────────────────────────────────────────────────────────────────┤
     #  │ Mode GitOps (git_repo_url défini)                               │
-    #  │   → ArgoCD Application depuis Git (apps/demo-app/)             │
+    #  │   → ArgoCD Application depuis Git (helm/demo-app/)             │
     #  │   → ArgoCD est le seul owner du Rollout                        │
     #  │   → Changer values.yaml dans Git → ArgoCD sync → Argo Rollouts │
     #  └─────────────────────────────────────────────────────────────────┘
@@ -352,7 +352,7 @@
             source:
               repoURL: "{{ git_repo_url }}"
               targetRevision: HEAD
-              path: apps/demo-app
+              path: helm/demo-app
               helm:
                 releaseName: demo-app
                 valueFiles:
@@ -406,4 +406,4 @@
           - "Port-forwards :"
           - "  make port-forwards"
           - ""
-          - "{{ 'GitOps : modifier apps/demo-app/values.yaml → git commit + push → ArgoCD sync → Blue/Green' if git_repo_url != '' else 'Pour activer le mode GitOps : définir git_repo_url dans tfvars/local.tfvars' }}"
+          - "{{ 'GitOps : modifier helm/demo-app/values.yaml → git commit + push → ArgoCD sync → Blue/Green' if git_repo_url != '' else 'Pour activer le mode GitOps : définir git_repo_url dans tfvars/local.tfvars' }}"
