@@ -1,7 +1,7 @@
 # ─── Terraform ────────────────────────────────────────────────────────────────
-terraform/.terraform/
-terraform/.terraform.lock.hcl
-terraform/.terraform-helm/
+terraform/k8s/.terraform/
+terraform/k8s/.terraform.lock.hcl
+terraform/k8s/.terraform-helm/
 
 # State (dossier dédié)
 state/terraform.tfstate
@@ -9,6 +9,8 @@ state/*.backup
 
 # Outputs générés
 terraform-outputs.json
+vm-outputs.json
+vm-ids.json
 
 # Anciens emplacements (sécurité)
 *.tfstate

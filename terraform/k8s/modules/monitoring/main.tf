@@ -38,7 +38,7 @@ resource "helm_release" "kube_prometheus_stack" {
           storageSpec = {
             volumeClaimTemplate = {
               spec = {
-                storageClassName = "standard"
+                storageClassName = "local-path"
                 accessModes      = ["ReadWriteOnce"]
                 resources = {
                   requests = { storage = var.prometheus_storage_size }
@@ -66,9 +66,13 @@ resource "helm_release" "kube_prometheus_stack" {
         # Dashboards supplémentaires pré-chargés
         defaultDashboardsEnabled = true
         persistence = {
-          enabled          = true
-          storageClassName = "standard"
-          size             = "1Gi"
+          enabled = false
+        }
+        # Sidecar : utiliser l'image Docker Hub (quay.io inaccessible depuis les VMs)
+        sidecar = {
+          image = {
+            repository = "kiwigrid/k8s-sidecar"
+          }
         }
         # Grafana ini : désactiver les news/télémétrie en local
         grafana = {

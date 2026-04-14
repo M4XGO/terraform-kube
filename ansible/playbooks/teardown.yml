@@ -1,40 +1,206 @@
 ---
-# ─── Teardown : suppression du cluster minikube ───────────────────────────────
-# minikube delete supprime le cluster ET toutes les ressources K8s avec lui.
-# Pas besoin de supprimer les ressources Terraform au préalable.
-# Le state Terraform est purgé par `make tf-state-purge` après ce playbook.
+# ─── Teardown : suppression complète du cluster et des VMs ───────────────────
+# 1. Désinstalle k3s sur les nœuds (master + workers) — ignore si inaccessibles
+# 2. Éteint et supprime les VMs VMware Fusion via vmrest REST API
+# 3. Purge les fichiers de state et d'outputs
 #
-# Usage manuel :
-#   ansible-playbook ansible/playbooks/teardown.yml
+# Usage : ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/teardown.yml
 # ──────────────────────────────────────────────────────────────────────────────
 
-- name: Teardown du cluster minikube
+# ─── Construction de l'inventaire depuis vm-outputs.json ─────────────────────
+- name: Teardown — construction de l'inventaire
   hosts: localhost
   gather_facts: false
-
   vars:
-    tf_outputs_file: "{{ playbook_dir }}/../../terraform-outputs.json"
-    cluster_name: >-
-      {{
-        (lookup('file', tf_outputs_file, errors='ignore') | default('{}') | from_json)
-        .get('cluster_name', {}).get('value', 'terraform-kube')
-      }}
+    vm_outputs_file: "{{ playbook_dir }}/../../vm-outputs.json"
+    vm_ids_file: "{{ playbook_dir }}/../../vm-ids.json"
 
   tasks:
-    - name: Afficher le cluster cible
-      ansible.builtin.debug:
-        msg: "Suppression du cluster : {{ cluster_name }}"
+    - name: Vérifier si vm-outputs.json existe
+      ansible.builtin.stat:
+        path: "{{ vm_outputs_file }}"
+      register: _vm_outputs_stat
 
-    - name: Supprimer le cluster minikube
-      ansible.builtin.command: minikube delete --profile {{ cluster_name }}
-      register: minikube_delete
-      changed_when: true
+    - name: Lire vm-outputs.json
+      ansible.builtin.set_fact:
+        _vms: "{{ lookup('file', vm_outputs_file) | from_json }}"
+      when: _vm_outputs_stat.stat.exists
+
+    - name: Ajouter le master à l'inventaire dynamique
+      ansible.builtin.add_host:
+        name: k3s-master
+        ansible_host: "{{ _vms.master_ip.value }}"
+        ansible_user: "{{ _vms.ssh_user.value | default('debian') }}"
+        ansible_ssh_private_key_file: "{{ _vms.ssh_private_key.value | default('~/.ssh/id_ed25519') }}"
+        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        groups: k3s_master
+      when: _vm_outputs_stat.stat.exists
+
+    - name: Ajouter les workers à l'inventaire dynamique
+      ansible.builtin.add_host:
+        name: "k3s-worker-{{ idx + 1 }}"
+        ansible_host: "{{ item }}"
+        ansible_user: "{{ _vms.ssh_user.value | default('debian') }}"
+        ansible_ssh_private_key_file: "{{ _vms.ssh_private_key.value | default('~/.ssh/id_ed25519') }}"
+        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        groups: k3s_workers
+      loop: "{{ _vms.worker_ips.value }}"
+      loop_control:
+        index_var: idx
+      when: _vm_outputs_stat.stat.exists
+
+# ─── Désinstallation k3s — workers ───────────────────────────────────────────
+- name: Désinstaller k3s sur les workers
+  hosts: k3s_workers
+  gather_facts: false
+  become: true
+  ignore_unreachable: true
+
+  tasks:
+    - name: Exécuter k3s-agent-uninstall.sh
+      ansible.builtin.shell: /usr/local/bin/k3s-agent-uninstall.sh
+      args:
+        removes: /usr/local/bin/k3s-agent-uninstall.sh
+      ignore_errors: true
+
+# ─── Désinstallation k3s — master ────────────────────────────────────────────
+- name: Désinstaller k3s sur le master
+  hosts: k3s_master
+  gather_facts: false
+  become: true
+  ignore_unreachable: true
+
+  tasks:
+    - name: Exécuter k3s-uninstall.sh
+      ansible.builtin.shell: /usr/local/bin/k3s-uninstall.sh
+      args:
+        removes: /usr/local/bin/k3s-uninstall.sh
+      ignore_errors: true
+
+# ─── Suppression des VMs via vmrest + purge state ─────────────────────────────
+- name: Supprimer les VMs VMware Fusion et purger les states
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../vars/vms.yml
+  vars:
+    repo_root: "{{ playbook_dir }}/../.."
+    vm_ids_file: "{{ repo_root }}/vm-ids.json"
+
+  tasks:
+    - name: Vérifier si vm-ids.json existe
+      ansible.builtin.stat:
+        path: "{{ vm_ids_file }}"
+      register: _vm_ids_stat
+
+    - name: Lire vm-ids.json
+      ansible.builtin.set_fact:
+        _vm_ids: "{{ lookup('file', vm_ids_file) | from_json }}"
+      when: _vm_ids_stat.stat.exists
+
+    # ── Éteindre les workers ───────────────────────────────────────────────
+    - name: Éteindre les workers
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ item }}/power"
+        method: PUT
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        headers:
+          Content-Type: "application/vnd.vmware.vmw.rest-v1+json"
+        body: "off"
+        body_format: raw
+        status_code: [200, 204, 404, 409]
+      loop: "{{ _vm_ids.worker_vm_ids }}"
+      when: _vm_ids_stat.stat.exists
+      ignore_errors: true
+
+    - name: Éteindre le master
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ _vm_ids.master_vm_id }}/power"
+        method: PUT
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        headers:
+          Content-Type: "application/vnd.vmware.vmw.rest-v1+json"
+        body: "off"
+        body_format: raw
+        status_code: [200, 204, 404, 409]
+      when: _vm_ids_stat.stat.exists
+      ignore_errors: true
+
+    - name: Attendre l'arrêt des VMs
+      ansible.builtin.pause:
+        seconds: 5
+      when: _vm_ids_stat.stat.exists
+
+    # ── Désenregistrer + supprimer les VMs ──────────────────────────────────
+    - name: Désenregistrer les workers de vmrest
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ item }}"
+        method: DELETE
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        headers:
+          Content-Type: "application/vnd.vmware.vmw.rest-v1+json"
+        status_code: [200, 204, 404]
+      loop: "{{ _vm_ids.worker_vm_ids }}"
+      when: _vm_ids_stat.stat.exists
+      ignore_errors: true
+
+    - name: Désenregistrer le master de vmrest
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ _vm_ids.master_vm_id }}"
+        method: DELETE
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        headers:
+          Content-Type: "application/vnd.vmware.vmw.rest-v1+json"
+        status_code: [200, 204, 404]
+      when: _vm_ids_stat.stat.exists
+      ignore_errors: true
+
+    - name: Supprimer les dossiers .vmwarevm du filesystem
+      ansible.builtin.file:
+        path: "{{ vm_base_dir }}/{{ item }}.vmwarevm"
+        state: absent
+      loop:
+        - "{{ cluster_prefix }}-master"
+        - "{{ cluster_prefix }}-worker-1"
+        - "{{ cluster_prefix }}-worker-2"
+      when: _vm_ids_stat.stat.exists
+      ignore_errors: true
+
+    # ── Supprimer le contexte kubectl ──────────────────────────────────────
+    - name: Supprimer le contexte kubectl
+      ansible.builtin.command: "kubectl config delete-context {{ cluster_prefix }}"
       failed_when: false
+      changed_when: true
 
-    - name: Afficher la sortie minikube delete
-      ansible.builtin.debug:
-        var: minikube_delete.stdout_lines
+    # ── Purger les fichiers locaux ─────────────────────────────────────────
+    - name: Purger les fichiers de state et outputs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ repo_root }}/vm-ids.json"
+        - "{{ repo_root }}/vm-outputs.json"
+        - "{{ repo_root }}/terraform-outputs.json"
+        - "{{ repo_root }}/state/k8s.tfstate"
+        - "{{ repo_root }}/state/k8s.tfstate.backup"
 
     - name: Teardown terminé
       ansible.builtin.debug:
-        msg: "✓ Cluster '{{ cluster_name }}' supprimé."
+        msg:
+          - "✓ k3s désinstallé sur tous les nœuds"
+          - "✓ VMs VMware Fusion supprimées via vmrest"
+          - "✓ States et outputs purgés"
+          - ""
+          - "Prochain déploiement : make deploy"

@@ -1,9 +1,9 @@
 terraform {
   required_version = ">= 1.6.0"
 
-  # State stocké dans state/ à la racine du repo (hors du dossier tf/)
+  # State k8s séparé du state vms
   backend "local" {
-    path = "../state/terraform.tfstate"
+    path = "../../state/k8s.tfstate"
   }
 
   required_providers {

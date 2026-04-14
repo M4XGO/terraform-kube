@@ -1,0 +1,323 @@
+---
+# ─── ansible/playbooks/create-vms.yml ────────────────────────────────────────
+# Crée 3 VMs (1 master + N workers) dans VMware Fusion.
+# Contourne la limitation licence Player en clonant via copie filesystem
+# puis en enregistrant les VMs via vmrest POST /api/vms/registration.
+#
+# Produit :
+#   - vm-ids.json     → IDs VMware (utilisé par teardown)
+#   - vm-outputs.json → IPs + infos SSH (utilisé par k3s-install.yml)
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Créer les VMs du cluster k3s (clone filesystem + vmrest registration)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../vars/vms.yml
+
+  tasks:
+
+    # ── Validations préalables ────────────────────────────────────────────────
+
+    - name: Vérifier que template_vm_id est renseigné
+      ansible.builtin.fail:
+        msg: |
+          template_vm_id est vide dans ansible/vars/vms.yml.
+          Lancer 'make vm-list' pour trouver l'ID de votre VM template.
+      when: template_vm_id | length == 0
+
+    - name: Vérifier la connexion vmrest
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms"
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        status_code: 200
+      register: vmrest_check
+      failed_when: vmrest_check.status != 200
+
+    - name: Vérifier que vm-ids.json n'existe pas (protection anti-doublon)
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/../../vm-ids.json"
+      register: _vm_ids_stat
+
+    - name: Échouer si vm-ids.json existe déjà
+      ansible.builtin.fail:
+        msg: >
+          vm-ids.json existe déjà — les VMs ont peut-être déjà été créées.
+          Lancer 'make destroy' pour supprimer le cluster existant.
+      when: _vm_ids_stat.stat.exists
+
+    # ── Récupérer le path du template ────────────────────────────────────────
+
+    - name: Récupérer les infos de toutes les VMs
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms"
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+      register: _all_vms
+
+    - name: Trouver le path du template
+      ansible.builtin.set_fact:
+        _template_vmx: "{{ (_all_vms.json | selectattr('id', 'equalto', template_vm_id) | first).path }}"
+
+    - name: Déduire le dossier .vmwarevm du template
+      ansible.builtin.set_fact:
+        _template_dir: "{{ _template_vmx | dirname }}"
+
+    - name: Afficher le template trouvé
+      ansible.builtin.debug:
+        msg: "Template : {{ _template_dir }}"
+
+    # ── Éteindre le template si allumé ───────────────────────────────────────
+
+    - name: Vérifier le power state du template
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ template_vm_id }}/power"
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+      register: _template_power
+
+    - name: Éteindre le template si allumé
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ template_vm_id }}/power"
+        method: PUT
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        headers:
+          Content-Type: "application/vnd.vmware.vmw.rest-v1+json"
+        body: "off"
+        body_format: raw
+        status_code: [200, 204]
+      when: _template_power.json.power_state == 'poweredOn'
+
+    - name: Attendre l'extinction du template
+      ansible.builtin.pause:
+        seconds: 5
+      when: _template_power.json.power_state == 'poweredOn'
+
+    # ── Construire la liste des VMs à créer ──────────────────────────────────
+
+    - name: Construire la liste des nœuds
+      ansible.builtin.set_fact:
+        _node_names: >-
+          {{ [cluster_prefix + '-master'] +
+             range(1, worker_count + 1) | map('string') |
+             map('regex_replace', '^(.*)$', cluster_prefix + '-worker-\1') | list }}
+
+    # ── Cloner via filesystem (Python pour gérer les noms avec caractères spéciaux) ─
+
+    - name: "Cloner et préparer les VMs"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import shutil, os, glob, sys
+            src = sys.argv[1]
+            name = sys.argv[2]
+            base = sys.argv[3]
+            dst = os.path.join(base, name + '.vmwarevm')
+            if not os.path.isdir(dst):
+                shutil.copytree(src, dst)
+            for lck in glob.glob(os.path.join(dst, '*.lck')):
+                os.remove(lck)
+            target_vmx = os.path.join(dst, name + '.vmx')
+            if not os.path.exists(target_vmx):
+                vmx_files = [f for f in os.listdir(dst) if f.endswith('.vmx')]
+                if not vmx_files:
+                    raise Exception('No .vmx found in ' + dst)
+                os.rename(os.path.join(dst, vmx_files[0]), target_vmx)
+            with open(target_vmx) as f:
+                lines = f.readlines()
+            with open(target_vmx, 'w') as f:
+                for line in lines:
+                    if line.strip().startswith('displayName'):
+                        f.write('displayName = "' + name + '"\n')
+                    else:
+                        f.write(line)
+            print('OK: ' + name)
+          - "{{ _template_dir }}"
+          - "{{ item }}"
+          - "{{ vm_base_dir }}"
+        creates: "{{ vm_base_dir }}/{{ item }}.vmwarevm/{{ item }}.vmx"
+      loop: "{{ _node_names }}"
+
+    # ── Enregistrer les VMs dans Fusion via vmrest ───────────────────────────
+
+    - name: Lister les VMs déjà enregistrées
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms"
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+      register: _existing_vms
+
+    - name: Construire le mapping path → id des VMs existantes
+      ansible.builtin.set_fact:
+        _existing_vm_paths: "{{ dict(_existing_vms.json | map(attribute='path') | zip(_existing_vms.json | map(attribute='id'))) }}"
+
+    - name: Enregistrer chaque VM dans Fusion (skip si déjà enregistrée)
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/registration"
+        method: POST
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        headers:
+          Content-Type: "application/vnd.vmware.vmw.rest-v1+json"
+        body_format: json
+        body:
+          name: "{{ item }}"
+          path: "{{ vm_base_dir }}/{{ item }}.vmwarevm/{{ item }}.vmx"
+        status_code: [200, 201]
+      loop: "{{ _node_names }}"
+      register: _registrations
+      when: (vm_base_dir + '/' + item + '.vmwarevm/' + item + '.vmx') not in _existing_vm_paths
+
+    - name: Relire la liste des VMs depuis vmrest
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms"
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+      register: _all_vms_after
+
+    - name: Construire la liste ordonnée des IDs
+      ansible.builtin.set_fact:
+        _vm_path_to_id: "{{ dict(_all_vms_after.json | map(attribute='path') | zip(_all_vms_after.json | map(attribute='id'))) }}"
+
+    - name: Résoudre les IDs pour chaque nœud
+      ansible.builtin.set_fact:
+        _vm_ids: "{{ _vm_ids | default([]) + [_vm_path_to_id[vm_base_dir + '/' + item + '.vmwarevm/' + item + '.vmx']] }}"
+      loop: "{{ _node_names }}"
+
+    # ── Configurer CPU/RAM ───────────────────────────────────────────────────
+
+    - name: "Configurer le master ({{ master_cpu }} vCPU / {{ master_memory }} Mo)"
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ _vm_ids[0] }}"
+        method: PUT
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        headers:
+          Content-Type: "application/vnd.vmware.vmw.rest-v1+json"
+        body_format: json
+        body:
+          processors: "{{ master_cpu | int }}"
+          memory: "{{ master_memory | int }}"
+        status_code: [200, 204]
+
+    - name: "Configurer les workers ({{ worker_cpu }} vCPU / {{ worker_memory }} Mo)"
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ item }}"
+        method: PUT
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        headers:
+          Content-Type: "application/vnd.vmware.vmw.rest-v1+json"
+        body_format: json
+        body:
+          processors: "{{ worker_cpu | int }}"
+          memory: "{{ worker_memory | int }}"
+        status_code: [200, 204]
+      loop: "{{ _vm_ids[1:] }}"
+
+    # ── Démarrer toutes les VMs ──────────────────────────────────────────────
+
+    - name: Démarrer toutes les VMs
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ item }}/power"
+        method: PUT
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        headers:
+          Content-Type: "application/vnd.vmware.vmw.rest-v1+json"
+        body: "on"
+        body_format: raw
+        status_code: [200, 204]
+      loop: "{{ _vm_ids }}"
+
+    # ── Attendre les IPs (VMware Tools requis sur le template) ───────────────
+
+    - name: Attendre l'IP du master (max 5 min)
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ _vm_ids[0] }}/ip"
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        status_code: [200, 404, 500]
+      register: _master_ip
+      until: >
+        _master_ip.status == 200 and
+        (_master_ip.json.ip | default('')) not in ['', '0.0.0.0', '0.0.0.0/0']
+      retries: 30
+      delay: 10
+
+    - name: Attendre les IPs des workers (max 5 min chacun)
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ item }}/ip"
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        status_code: [200, 404, 500]
+      register: _worker_ips
+      until: >
+        _worker_ips.status == 200 and
+        (_worker_ips.json.ip | default('')) not in ['', '0.0.0.0', '0.0.0.0/0']
+      retries: 30
+      delay: 10
+      loop: "{{ _vm_ids[1:] }}"
+
+    # ── Écrire les fichiers de sortie ────────────────────────────────────────
+
+    - name: Compiler les infos des VMs
+      ansible.builtin.set_fact:
+        _master_vm_id: "{{ _vm_ids[0] }}"
+        _master_ip_addr: "{{ _master_ip.json.ip }}"
+        _worker_vm_ids: "{{ _vm_ids[1:] }}"
+        _worker_ip_addrs: "{{ _worker_ips.results | map(attribute='json.ip') | list }}"
+
+    - name: Écrire vm-ids.json (utilisé par teardown)
+      ansible.builtin.copy:
+        content: "{{ {'master_vm_id': _master_vm_id, 'worker_vm_ids': _worker_vm_ids} | to_nice_json }}\n"
+        dest: "{{ playbook_dir }}/../../vm-ids.json"
+        mode: "0600"
+
+    - name: Écrire vm-outputs.json (utilisé par k3s-install)
+      ansible.builtin.copy:
+        content: |
+          {
+            "master_ip":       { "value": "{{ _master_ip_addr }}" },
+            "worker_ips":      { "value": {{ _worker_ip_addrs | to_json }} },
+            "ssh_user":        { "value": "{{ ssh_user }}" },
+            "ssh_private_key": { "value": "{{ ssh_private_key }}" },
+            "cluster_prefix":  { "value": "{{ cluster_prefix }}" }
+          }
+        dest: "{{ playbook_dir }}/../../vm-outputs.json"
+        mode: "0600"
+
+    - name: Résumé des VMs créées
+      ansible.builtin.debug:
+        msg:
+          - "✓ master  : {{ _master_ip_addr }}  (id: {{ _master_vm_id }})"
+          - "✓ workers : {{ _worker_ip_addrs }} (ids: {{ _worker_vm_ids }})"
+          - "→ vm-ids.json et vm-outputs.json générés"
