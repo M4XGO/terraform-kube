@@ -19,6 +19,19 @@ app:
     - "Authentification utilisateur"
     - "Dashboard principal"
 
+# app:
+#   version: "v2.0.0"
+#   colorName: "green"
+#   colorHex: "#16a34a"
+#   gradientStart: "#16a34a"
+#   gradientEnd: "#065f46"
+#   message: "Version 2.0 — Nouvelle fonctionnalité ✨"
+#   features:
+#     - "Interface redesignée"
+#     - "Authentification MFA"
+#     - "Dashboard avancé"
+#     - "API v2 — performances +40%"
+
 service:
   port: 80
 
