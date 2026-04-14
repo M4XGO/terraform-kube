@@ -1,10 +1,9 @@
 # ─── Module cluster ───────────────────────────────────────────────────────────
-# Ce module ne provisionne PAS le cluster — c'est le rôle d'Ansible.
-# Ansible (ansible/playbooks/pre-deploy.yml) exécute `minikube start` avant
-# que Terraform ne soit invoqué (orchestré par `make deploy`).
+# Ce module ne provisionne PAS le cluster — c'est le rôle de Terraform/vms +
+# Ansible (k3s-install.yml).
 #
-# Ce module valide la connectivité et expose des informations sur le cluster
-# que les autres modules utilisent via depends_on.
+# Ce module valide la connectivité au cluster k3s et sert de point d'ancrage
+# (depends_on) pour les autres modules.
 # ──────────────────────────────────────────────────────────────────────────────
 
 data "kubernetes_nodes" "cluster" {}

@@ -156,6 +156,13 @@
     #  KUBECTL ARGO ROLLOUTS PLUGIN
     # ════════════════════════════════════════════════════════════════════════
 
+    - name: "[macOS] Ajouter le tap argoproj/tap"
+      community.general.homebrew_tap:
+        name: argoproj/tap
+        state: present
+      when: ansible_system == "Darwin"
+      ignore_errors: true
+
     - name: "[macOS] Installer kubectl-argo-rollouts via Homebrew"
       community.general.homebrew:
         name: argoproj/tap/kubectl-argo-rollouts
@@ -399,8 +406,4 @@
           - "Port-forwards :"
           - "  make port-forwards"
           - ""
-          - "{% if git_repo_url != '' %}"
-          - "GitOps : modifier apps/demo-app/values.yaml → git commit + push → ArgoCD sync → Blue/Green"
-          - "{% else %}"
-          - "Pour activer le mode GitOps : définir git_repo_url dans tfvars/local.tfvars"
-          - "{% endif %}"
+          - "{{ 'GitOps : modifier apps/demo-app/values.yaml → git commit + push → ArgoCD sync → Blue/Green' if git_repo_url != '' else 'Pour activer le mode GitOps : définir git_repo_url dans tfvars/local.tfvars' }}"

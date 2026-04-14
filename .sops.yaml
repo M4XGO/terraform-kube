@@ -1,0 +1,3 @@
+creation_rules:
+  - path_regex: ansible/vars/vms.yml
+    kms: "arn:aws:kms:eu-west-3:711387131544:alias/kody-sops-secret"

@@ -1,14 +1,10 @@
-# ─── Cluster minikube ─────────────────────────────────────────────────────────
+# ─── Cluster k3s (connectivité) ───────────────────────────────────────────────
+# Les VMs sont créées par terraform/vms/, k3s est installé par Ansible.
+# Ce module valide uniquement que le cluster est accessible.
 module "cluster" {
   source = "./modules/cluster"
 
-  cluster_name       = var.cluster_name
-  kubernetes_version = var.kubernetes_version
-  cpus               = var.cpus
-  memory             = var.memory
-  driver             = var.driver
-  disk_size          = var.disk_size
-  enable_cilium      = var.enable_cilium
+  cluster_name = var.cluster_name
 }
 
 # ─── Couche plateforme : Cilium (opt.) + Ingress NGINX + cert-manager ─────────
@@ -18,8 +14,7 @@ module "platform" {
   source = "./modules/platform"
   count  = var.enable_platform ? 1 : 0
 
-  cluster_name  = var.cluster_name
-  enable_cilium = var.enable_cilium
+  cluster_name = var.cluster_name
 
   depends_on = [module.cluster]
 }
