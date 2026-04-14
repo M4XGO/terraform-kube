@@ -187,14 +187,27 @@ rollout-status: _check-k8s-deps
 	kubectl argo rollouts get rollout demo-app -n $(APP_NS) --context=$(CLUSTER_NAME) --watch
 
 rollout-upgrade: _check-k8s-deps
-	@echo ">>> Déploiement de la version GREEN (v2)..."
-	helm upgrade demo-app helm/demo-app \
-		--namespace $(APP_NS) \
-		--kube-context $(CLUSTER_NAME) \
-		--values helm/demo-app/values.yaml \
-		--values helm/demo-app/values-v2.yaml \
-		--wait
-	@echo ">>> GREEN en PREVIEW — make rollout-status | make rollout-promote"
+	@if grep -q 'git_repo_url.*=.*"https' terraform/k8s/tfvars/local.tfvars 2>/dev/null; then \
+		echo ""; \
+		echo "════════════════════════════════════════════════════════════"; \
+		echo " Mode GitOps activé — ArgoCD gère le déploiement."; \
+		echo ""; \
+		echo " Pour déclencher un blue/green :"; \
+		echo "   1. Modifier helm/demo-app/values.yaml (image, tag, message...)"; \
+		echo "   2. git add + git commit + git push"; \
+		echo "   3. ArgoCD sync automatique → Argo Rollouts blue/green"; \
+		echo "   4. make rollout-promote   pour valider"; \
+		echo "════════════════════════════════════════════════════════════"; \
+	else \
+		echo ">>> Déploiement de la version GREEN (v2)..."; \
+		helm upgrade demo-app helm/demo-app \
+			--namespace $(APP_NS) \
+			--kube-context $(CLUSTER_NAME) \
+			--values helm/demo-app/values.yaml \
+			--values helm/demo-app/values-v2.yaml \
+			--wait; \
+		echo ">>> GREEN en PREVIEW — make rollout-status | make rollout-promote"; \
+	fi
 
 rollout-promote: _check-k8s-deps
 	kubectl argo rollouts promote demo-app -n $(APP_NS) --context=$(CLUSTER_NAME)

@@ -13,4 +13,4 @@ grafana_admin_password = "admin"
 # ─── Application demo (blue/green) ────────────────────────────────────────────
 enable_apps   = true
 app_namespace = "demo-app"
-git_repo_url  = ""
+git_repo_url  = "https://github.com/M4XGO/terraform-kube.git"
