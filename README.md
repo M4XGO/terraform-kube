@@ -169,8 +169,8 @@ Le flow se déroule en **6 étapes automatiques** :
                              • Namespace demo-app
 [5/6] tf-k8s-outputs     → Exporte les outputs → terraform-outputs.json
 [6/6] ansible-post       → Crée le ClusterIssuer cert-manager,
-                           déploie la demo-app (helm install),
-                           crée l'ArgoCD Application (si git_repo_url configuré)
+                           Mode GitOps : crée l'ArgoCD Application (sync depuis Git)
+                           Mode local  : déploie la demo-app via helm install
 ```
 
 ### Étapes individuelles
@@ -214,11 +214,48 @@ make argocd-password
 
 L'application de démo illustre un **déploiement Blue/Green** avec analyse automatique via Prometheus.
 
+### Deux modes de déploiement
+
+| | Mode Local (`git_repo_url = ""`) | Mode GitOps (`git_repo_url` défini) |
+|---|---|---|
+| **Qui déploie** | Ansible via `helm install` | ArgoCD depuis le repo Git |
+| **Déclencher un Blue/Green** | `make rollout-upgrade` | Modifier `helm/demo-app/values.yaml` → commit + push |
+| **Sync** | Manuel (Makefile) | Automatique (ArgoCD auto-sync) |
+| **Owner du Rollout** | Helm local | ArgoCD |
+
+> **Par défaut, le mode GitOps est activé** (`git_repo_url` est configuré dans `terraform/k8s/tfvars/local.tfvars`).
+> Pour revenir en mode local, vider la valeur : `git_repo_url = ""`.
+
+### Mode GitOps (recommandé)
+
+ArgoCD surveille le repo Git et synchronise automatiquement le chart `helm/demo-app/` vers le cluster.
+
 ```bash
-# Voir l'état du Rollout en temps réel
+# 1. Modifier le chart (image, tag, message, replicas...)
+vim helm/demo-app/values.yaml
+
+# 2. Commit + push
+git add helm/demo-app/values.yaml
+git commit -m "feat: update demo-app to v2"
+git push
+
+# 3. ArgoCD détecte le changement → sync auto → Argo Rollouts lance le Blue/Green
+#    Suivre le déploiement :
 make rollout-status
 
-# Déclencher un déploiement GREEN (v2)
+# 4. Promouvoir GREEN → production
+make rollout-promote
+
+# 5. Ou annuler
+make rollout-abort
+```
+
+> `make rollout-upgrade` affiche un rappel du workflow GitOps quand le mode est activé.
+
+### Mode Local (fallback)
+
+```bash
+# Déclencher un déploiement GREEN (v2) via Helm local
 make rollout-upgrade
 
 # Promouvoir GREEN → production (après analyse OK)
@@ -226,6 +263,16 @@ make rollout-promote
 
 # Annuler et revenir sur BLUE
 make rollout-abort
+```
+
+### Commandes communes (les deux modes)
+
+```bash
+make rollout-status    # État du Rollout en temps réel
+make rollout-promote   # Promouvoir GREEN → production
+make rollout-abort     # Annuler, revenir sur BLUE
+make rollout-history   # Historique des révisions
+make rollout-undo      # Revenir à la révision précédente
 ```
 
 ### Ajouter les hosts locaux
