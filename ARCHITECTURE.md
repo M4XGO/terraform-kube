@@ -10,28 +10,30 @@ graph TB
         direction LR
         subgraph TOOLS ["Outils"]
             MAKE["Make\norchestration"]
-            ANSIBLE["Ansible\nprovisioning OS"]
+            ANSIBLE["Ansible\nprovisioning VMs + k3s"]
             TF["Terraform\nIaC déclaratif"]
             HELM_CLI["Helm CLI\npackage manager"]
         end
         subgraph REPO ["Repo Git"]
-            TF_DIR["tf/\nmodules + tfvars"]
+            TF_DIR["terraform/k8s/\nmodules + tfvars"]
             HELM_DIR["helm/\ncharts (demo-app)"]
-            ANS_DIR["ansible/\nplaybooks"]
+            ANS_DIR["ansible/\nplaybooks + vars"]
             STATE["state/\nterraform.tfstate"]
         end
     end
 
-    subgraph DOCKER ["🐳 Docker Desktop"]
-        VM["VM Linux\n(kernel)"]
+    subgraph VMWARE ["🖥️ VMware Fusion Pro (vmrest API)"]
+        direction LR
+        VM1["VM master\nDebian ARM"]
+        VM2["VM worker-1\nDebian ARM"]
+        VM3["VM worker-2\nDebian ARM"]
     end
 
-    subgraph MINIKUBE ["☸️ minikube (cluster Kubernetes)"]
+    subgraph K3S ["☸️ Cluster k3s (3 nœuds)"]
         direction TB
 
         subgraph SYS ["Système cluster"]
-            KUBELET["kubelet\nkube-proxy\ncoredns"]
-            CSI["StorageClass\nstandard (hostPath)"]
+            KUBELET["kubelet\nkube-proxy\ncoredns\nlocal-path-provisioner"]
         end
 
         subgraph PLATFORM ["Namespace: cert-manager · ingress-nginx"]
@@ -59,21 +61,23 @@ graph TB
         end
     end
 
-    GIT_REMOTE(["☁️ Git remote\n(GitHub/GitLab)"])
+    GIT_REMOTE(["☁️ GitHub\nM4XGO/terraform-kube"])
     USER(["👤 Trafic\nHTTP"])
 
-    %% Qui provisionne quoi
-    ANSIBLE -->|"minikube start\ninstall dépendances"| DOCKER
-    DOCKER -->|"crée"| MINIKUBE
+    %% Provisionnement VMs
+    ANSIBLE -->|"vmrest API\nclone + power on"| VMWARE
+    ANSIBLE -->|"SSH\nk3s install"| VM1 & VM2 & VM3
+    VM1 & VM2 & VM3 -->|"forment"| K3S
+
+    %% Déploiement k8s
     TF -->|"Helm release\ncert-manager"| PLATFORM
     TF -->|"Helm release\nkube-prometheus-stack"| MONITORING
     TF -->|"Helm release\nargocd + argo-rollouts"| GITOPS
     TF -->|"kubernetes_namespace"| APP
-    ANSIBLE -->|"helm install\npost-deploy"| ROLLOUT
-    ANSIBLE -->|"kubectl apply\nClusterIssuer"| CERT
+    ANSIBLE -->|"post-deploy\nClusterIssuer + ArgoCD App"| CERT & ARGO
 
     %% GitOps
-    GIT_REMOTE -->|"git push\n(mode GitOps)"| ARGO
+    GIT_REMOTE -->|"git push\nhelm/demo-app/"| ARGO
     ARGO -->|"sync Rollout"| ROLLOUT
     ROLLOUT_CTRL -->|"pilote\nBlueGreen"| ROLLOUT
 
@@ -104,16 +108,30 @@ flowchart TD
     DEV(["👨‍💻 make deploy"])
 
     subgraph STEP1 ["① Ansible — pre-deploy"]
-        A1["Détecte l'OS\nmacOS / Linux"]
-        A2["brew install\nminikube · kubectl · helm"]
-        A3["minikube start\n--driver=docker\n--cpus=4 --memory=6144"]
-        A4["helm repo add\ncache isolé tf/.terraform-helm/"]
-        A1 --> A2 --> A3 --> A4
+        A1["Vérifie vmrest\naccessible"]
+        A2["Prépare le cache Helm\nrepo add + update"]
+        A1 --> A2
     end
 
-    subgraph STEP2 ["② Terraform — apply"]
+    subgraph STEP2 ["② Ansible — create-vms"]
+        V1["Clone 3 VMs\ndepuis template Debian ARM\nvia vmrest API"]
+        V2["Configure CPU/RAM\nmaster: 2C/4G\nworkers: 2C/2G"]
+        V3["Power on\n+ attend les IPs"]
+        V4["Écrit\nvm-ids.json\nvm-outputs.json"]
+        V1 --> V2 --> V3 --> V4
+    end
+
+    subgraph STEP3 ["③ Ansible — k3s-install"]
+        K1["Installe k3s server\nsur le master"]
+        K2["Récupère node-token"]
+        K3["Installe k3s agent\nsur les 2 workers"]
+        K4["Vérifie 3 nœuds Ready\nfusionne kubeconfig"]
+        K1 --> K2 --> K3 --> K4
+    end
+
+    subgraph STEP4 ["④ Terraform — apply"]
         direction LR
-        T0["terraform -chdir=tf apply\n-var-file=tfvars/local.tfvars"]
+        T0["terraform -chdir=terraform/k8s apply\n-var-file=tfvars/local.tfvars"]
         subgraph TF_MODS ["Modules (ordre depends_on)"]
             TM1["module.cluster\ndata kubernetes_nodes\n(valide connectivité)"]
             TM2["module.platform\nHelm: ingress-nginx\nHelm: cert-manager"]
@@ -123,25 +141,25 @@ flowchart TD
             TM1 --> TM2 --> TM3 & TM4 --> TM5
         end
         T0 --> TF_MODS
-        TF_MODS -->|"state/terraform.tfstate"| STATE_FILE[("state/\nterraform.tfstate")]
+        TF_MODS -->|"state/k8s.tfstate"| STATE_FILE[("state/\nk8s.tfstate")]
     end
 
-    subgraph STEP3 ["③ Ansible — post-deploy"]
+    subgraph STEP5 ["⑤ Ansible — post-deploy"]
         B1["Attente CRDs\ncert-manager"]
         B2["kubectl apply\nClusterIssuer selfsigned\nClusterIssuer CA"]
-        B3["brew install\nkubectl-argo-rollouts"]
+        B3["Install kubectl-argo-rollouts\n(brew / curl)"]
         B4["kubectl apply\nServiceMonitor ingress-nginx"]
         B5["kubectl apply\nArgoCD AppProject demo"]
         B6{"git_repo_url\ndéfini ?"}
-        B7A["helm install\napps/demo-app BLUE v1\n(mode local)"]
-        B7B["kubectl apply\nArgoCD Application\n← Git source"]
+        B7A["helm install\nhelm/demo-app BLUE v1\n(mode local)"]
+        B7B["kubectl apply\nArgoCD Application\n← Git: helm/demo-app/"]
         B1 --> B2 --> B3 --> B4 --> B5 --> B6
         B6 -->|"Non"| B7A
-        B6 -->|"Oui"| B7B
+        B6 -->|"Oui ✅ défaut"| B7B
     end
 
-    subgraph STEP4 ["④ Blue/Green — Argo Rollouts"]
-        C1["make rollout-upgrade\nhelm upgrade --values values-v2.yaml\n— OU —\ngit push → ArgoCD sync"]
+    subgraph STEP6 ["⑥ Blue/Green — Argo Rollouts"]
+        C1["Mode GitOps : git push\n→ ArgoCD sync\nMode local : make rollout-upgrade"]
         C2["Argo Rollouts démarre\nGREEN en PREVIEW"]
         C3["AnalysisTemplate\nPrometheus: success rate · P99 · 5xx"]
         C4{"Analyse\nOK ?"}
@@ -152,12 +170,14 @@ flowchart TD
         C4 -->|"❌"| C6
     end
 
-    DEV --> STEP1 --> STEP2 --> STEP3 --> STEP4
+    DEV --> STEP1 --> STEP2 --> STEP3 --> STEP4 --> STEP5 --> STEP6
 
     style STEP1 fill:#f0f9ff,stroke:#0ea5e9
-    style STEP2 fill:#faf5ff,stroke:#a855f7
-    style STEP3 fill:#f0fdf4,stroke:#22c55e
-    style STEP4 fill:#fff7ed,stroke:#f97316
+    style STEP2 fill:#e0f2fe,stroke:#0284c7
+    style STEP3 fill:#dbeafe,stroke:#2563eb
+    style STEP4 fill:#faf5ff,stroke:#a855f7
+    style STEP5 fill:#f0fdf4,stroke:#22c55e
+    style STEP6 fill:#fff7ed,stroke:#f97316
     style STATE_FILE fill:#fef9c3,stroke:#eab308
 ```
 
@@ -168,19 +188,28 @@ flowchart TD
 ```mermaid
 flowchart TB
     DEV(["💻 Développeur"])
-    GIT(["📦 Git Repo\nhelm/demo-app/"])
+    GIT(["📦 GitHub\nM4XGO/terraform-kube\nhelm/demo-app/"])
 
     subgraph PROV ["🔧 Provisionnement — localhost"]
         direction LR
-        A1["1️⃣ Ansible pre-deploy\nminikube start\nHelm repos cache"]
+        A1["1️⃣ Ansible\npre-deploy + create-vms + k3s"]
         A2["2️⃣ Terraform apply\nHelm releases"]
-        A3["3️⃣ Ansible post-deploy\nClusterIssuer\nhelm install / ArgoCD App"]
+        A3["3️⃣ Ansible post-deploy\nClusterIssuer + ArgoCD App"]
         A1 --> A2 --> A3
     end
 
     DEV -->|"make deploy"| PROV
 
-    subgraph K8S ["☸️ Cluster minikube — Docker · Apple Silicon"]
+    subgraph VMWARE ["🖥️ VMware Fusion Pro · macOS Apple Silicon"]
+        direction LR
+        VM_M["VM master\nDebian ARM"]
+        VM_W1["VM worker-1\nDebian ARM"]
+        VM_W2["VM worker-2\nDebian ARM"]
+    end
+
+    A1 -->|"vmrest API + SSH"| VMWARE
+
+    subgraph K8S ["☸️ Cluster k3s — 3 nœuds Debian ARM"]
 
         subgraph NS_CM ["cert-manager"]
             CM["cert-manager + webhook"]
@@ -225,6 +254,8 @@ flowchart TB
 
     end
 
+    VMWARE -->|"k3s cluster"| K8S
+
     USER(["👤 Trafic HTTP"])
 
     A2 -->|"Helm release"| NS_CM
@@ -232,8 +263,7 @@ flowchart TB
     A2 -->|"Helm release"| NS_MON
     A2 -->|"Helm release"| NS_ARGO
     A3 -->|"ClusterIssuer"| CI
-    A3 -->|"helm install\nmode local"| RO
-    A3 -->|"Application CRD\nmode GitOps"| ARGO
+    A3 -->|"ArgoCD Application\nmode GitOps ✅"| ARGO
 
     GIT -->|"git push"| ARGO
     ARGO -->|"sync → Rollout"| RO
@@ -263,7 +293,7 @@ flowchart TD
     subgraph TRIGGER ["Déclenchement GREEN"]
         direction LR
         T1["Mode local\nmake rollout-upgrade\nhelm upgrade --values values-v2.yaml"]
-        T2["Mode GitOps\ngit commit + push\nvalues.yaml image.tag = v2\nArgoCD auto-sync"]
+        T2["Mode GitOps ✅ défaut\ngit commit + push\nhelm/demo-app/values.yaml\nArgoCD auto-sync"]
     end
 
     subgraph PREVIEW ["🟢 Preview GREEN"]
