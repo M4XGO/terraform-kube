@@ -1,22 +1,21 @@
 ---
-# ─── k3s-install : installation du cluster k3s sur les 3 VMs ─────────────────
-# Lit les IPs depuis vm-outputs.json (généré par terraform/vms output),
-# installe k3s en mode server sur le master et en mode agent sur les workers,
+# ─── k3s-install : installation du cluster k3s sur la VM Proxmox ──────────────
+# Lit l'IP depuis vm-outputs.json (généré par create-vms.yml),
+# installe k3s en mode server single-node,
 # puis exporte le kubeconfig dans ~/.kube/config avec le bon contexte.
 #
 # Topologie :
-#   - 1 master (control-plane)
-#   - 2 workers
+#   - 1 nœud unique (control-plane + workloads)
 #
-# Prérequis : vm-outputs.json à la racine du repo (make tf-vms-outputs)
+# Prérequis : vm-outputs.json à la racine du repo (make ansible-create-vms)
 # Usage     : ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/k3s-install.yml
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  1. Charger les IPs depuis les outputs Terraform et construire l'inventaire
+#  1. Charger l'IP depuis vm-outputs.json et construire l'inventaire
 # ═══════════════════════════════════════════════════════════════════════════════
 
-- name: Charger les IPs des VMs et construire l'inventaire dynamique
+- name: Charger l'IP de la VM et construire l'inventaire dynamique
   hosts: localhost
   gather_facts: false
 
@@ -28,15 +27,14 @@
       ansible.builtin.set_fact:
         vms: "{{ lookup('file', vm_outputs_file) | from_json }}"
 
-    - name: Extraire les IPs
+    - name: Extraire les paramètres de connexion
       ansible.builtin.set_fact:
-        master_ip:  "{{ vms.master_ip.value }}"
-        worker_ips: "{{ vms.worker_ips.value }}"
-        ssh_user:   "{{ vms.ssh_user.value | default('debian') }}"
-        ssh_key:    "{{ vms.ssh_private_key.value | default('~/.ssh/id_ed25519') }}"
+        master_ip:    "{{ vms.master_ip.value }}"
+        ssh_user:     "{{ vms.ssh_user.value | default('debian') }}"
+        ssh_key:      "{{ vms.ssh_private_key.value | default('~/.ssh/id_ed25519') }}"
         cluster_name: "{{ vms.cluster_prefix.value | default('terraform-kube') }}"
 
-    - name: Ajouter le master à l'inventaire dynamique
+    - name: Ajouter le nœud à l'inventaire dynamique
       ansible.builtin.add_host:
         name: k3s-master
         ansible_host: "{{ master_ip }}"
@@ -45,31 +43,19 @@
         ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
         groups: k3s_master
 
-    - name: Ajouter les workers à l'inventaire dynamique
-      ansible.builtin.add_host:
-        name: "k3s-worker-{{ idx + 1 }}"
-        ansible_host: "{{ item }}"
-        ansible_user: "{{ ssh_user }}"
-        ansible_ssh_private_key_file: "{{ ssh_key }}"
-        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-        groups: k3s_workers
-      loop: "{{ worker_ips }}"
-      loop_control:
-        index_var: idx
-
-    - name: Afficher les nœuds cibles
+    - name: Afficher le nœud cible
       ansible.builtin.debug:
         msg:
-          - "Master  : {{ master_ip }}"
-          - "Workers : {{ worker_ips | join(', ') }}"
+          - "Nœud    : {{ master_ip }}"
           - "User SSH: {{ ssh_user }}"
+          - "Cluster : {{ cluster_name }}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  2. Attendre que les VMs soient accessibles via SSH
+#  2. Attendre que la VM soit accessible via SSH
 # ═══════════════════════════════════════════════════════════════════════════════
 
-- name: Attendre la disponibilité SSH des nœuds
-  hosts: k3s_master:k3s_workers
+- name: Attendre la disponibilité SSH du nœud
+  hosts: k3s_master
   gather_facts: false
 
   tasks:
@@ -87,11 +73,11 @@
         msg: "OS : {{ ansible_distribution }} {{ ansible_distribution_version }}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  3. Prérequis communs sur tous les nœuds
+#  3. Prérequis système
 # ═══════════════════════════════════════════════════════════════════════════════
 
-- name: Prérequis système sur tous les nœuds
-  hosts: k3s_master:k3s_workers
+- name: Prérequis système
+  hosts: k3s_master
   gather_facts: true
   become: true
 
@@ -107,8 +93,8 @@
         name:
           - curl
           - ca-certificates
-          - open-iscsi   # requis pour les volumes iSCSI (Longhorn, etc.)
-          - nfs-common   # NFS pour les volumes partagés
+          - open-iscsi
+          - nfs-common
         state: present
       when: ansible_os_family == "Debian"
 
@@ -121,10 +107,10 @@
         reload: true
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  4. Installation k3s — nœud master (server)
+#  4. Installation k3s — single-node server
 # ═══════════════════════════════════════════════════════════════════════════════
 
-- name: Installer k3s sur le master
+- name: Installer k3s (single-node)
   hosts: k3s_master
   gather_facts: true
   become: true
@@ -133,7 +119,6 @@
     - name: Installer k3s server
       ansible.builtin.shell: |
         curl -sfL https://get.k3s.io | sh -s - server \
-          --cluster-init \
           --tls-san {{ ansible_host }} \
           --write-kubeconfig-mode 644 \
           --disable traefik \
@@ -151,75 +136,27 @@
       until: k3s_ready.rc == 0
       changed_when: false
 
-    - name: Récupérer le node-token
-      ansible.builtin.slurp:
-        src: /var/lib/rancher/k3s/server/node-token
-      register: node_token_b64
-
-    - name: Stocker le token pour les workers
-      ansible.builtin.set_fact:
-        k3s_node_token: "{{ node_token_b64.content | b64decode | trim }}"
-      delegate_facts: true
-      delegate_to: localhost
-
-    - name: "k3s master installé ✓"
+    - name: "k3s installé ✓"
       ansible.builtin.debug:
-        msg: "Master k3s actif sur {{ ansible_host }}:6443"
+        msg: "k3s actif sur {{ ansible_host }}:6443"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  5. Installation k3s — workers (agents)
+#  5. Vérification du cluster
 # ═══════════════════════════════════════════════════════════════════════════════
 
-- name: Installer k3s sur les workers
-  hosts: k3s_workers
-  gather_facts: true
-  become: true
-
-  vars:
-    master_ip: "{{ hostvars['localhost']['vms']['master_ip']['value'] }}"
-    k3s_token: "{{ hostvars['localhost']['k3s_node_token'] }}"
-
-  tasks:
-    - name: Installer k3s agent
-      ansible.builtin.shell: |
-        curl -sfL https://get.k3s.io | sh -s - agent \
-          --server https://{{ master_ip }}:6443 \
-          --token {{ k3s_token }} \
-          --node-name {{ inventory_hostname }}
-      args:
-        creates: /usr/local/bin/k3s
-      environment:
-        K3S_URL: "https://{{ master_ip }}:6443"
-        K3S_TOKEN: "{{ k3s_token }}"
-
-    - name: Vérifier que l'agent k3s tourne
-      ansible.builtin.systemd:
-        name: k3s-agent
-        state: started
-        enabled: true
-      changed_when: false
-
-    - name: "k3s worker installé ✓"
-      ansible.builtin.debug:
-        msg: "Worker {{ inventory_hostname }} rejoint {{ master_ip }}:6443"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  6. Vérification du cluster
-# ═══════════════════════════════════════════════════════════════════════════════
-
-- name: Vérifier que tous les nœuds sont Ready
+- name: Vérifier que le nœud est Ready
   hosts: k3s_master
   gather_facts: false
   become: true
 
   tasks:
-    - name: Attendre que tous les nœuds soient Ready (max 5 min)
+    - name: Attendre que le nœud soit Ready (max 5 min)
       ansible.builtin.command: k3s kubectl get nodes --no-headers
       register: nodes_status
       retries: 30
       delay: 10
       until: >-
-        nodes_status.stdout_lines | length >= 3 and
+        nodes_status.stdout_lines | length >= 1 and
         nodes_status.stdout_lines | select('search', 'NotReady') | list | length == 0
       changed_when: false
 
@@ -228,7 +165,7 @@
         msg: "{{ nodes_status.stdout_lines }}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  7. Exporter le kubeconfig vers la machine locale
+#  6. Exporter le kubeconfig vers la machine locale
 # ═══════════════════════════════════════════════════════════════════════════════
 
 - name: Exporter le kubeconfig vers la machine locale
@@ -237,7 +174,7 @@
   become: true
 
   vars:
-    master_ip: "{{ hostvars['localhost']['vms']['master_ip']['value'] }}"
+    master_ip:    "{{ hostvars['localhost']['vms']['master_ip']['value'] }}"
     cluster_name: "{{ hostvars['localhost']['vms']['cluster_prefix']['value'] | default('terraform-kube') }}"
     local_kubeconfig: "{{ lookup('env', 'HOME') }}/.kube/config"
 
@@ -248,7 +185,7 @@
         dest: /tmp/k3s-raw.yaml
         flat: true
 
-    - name: Corriger l'IP du serveur (127.0.0.1 → master IP)
+    - name: Corriger l'IP du serveur (127.0.0.1 → IP de la VM)
       ansible.builtin.replace:
         path: /tmp/k3s-raw.yaml
         regexp: 'https://127\.0\.0\.1:6443'
@@ -303,7 +240,7 @@
       ansible.builtin.debug:
         msg:
           - "════════════════════════════════════════════════════════"
-          - " Cluster k3s opérationnel !"
+          - " Cluster k3s opérationnel (single-node) !"
           - "════════════════════════════════════════════════════════"
           - ""
           - "{{ local_nodes.stdout_lines | join('\n') }}"

@@ -1,13 +1,13 @@
 .PHONY: help init validate plan deploy destroy status port-forwards \
         ansible-pre ansible-create-vms ansible-k3s ansible-post ansible-teardown \
         tf-k8s-apply tf-k8s-outputs tf-k8s-plan tf-state-purge \
-        argocd-password vm-list clean \
+        argocd-password clean \
         rollout-status rollout-upgrade rollout-promote rollout-abort \
         rollout-retry rollout-undo rollout-history app-url app-hosts
 
 CLUSTER_NAME ?= terraform-kube
 
-# Workspace Terraform (k8s uniquement — VMs gérées par Ansible)
+# Workspace Terraform (k8s uniquement — VM gérée par Proxmox)
 TF_K8S = terraform -chdir=terraform/k8s
 TF_K8S_VARS ?= tfvars/local.tfvars
 
@@ -16,30 +16,29 @@ ANSIBLE = ansible-playbook -i ansible/inventory/hosts.yml
 # ─── Aide ─────────────────────────────────────────────────────────────────────
 help:
 	@echo ""
-	@echo "  terraform-kube — Cluster k3s sur VMware Fusion (3 VMs Debian ARM)"
-	@echo "  Provisionnement : Ansible (VMs + k3s) + Terraform/k8s (Helm)"
+	@echo "  terraform-kube — Cluster k3s single-node sur Proxmox"
+	@echo "  Provisionnement : Ansible (k3s) + Terraform/k8s (Helm)"
 	@echo ""
 	@echo "  Structure :"
 	@echo "    ansible/          Playbooks : create-vms, k3s-install, post-deploy, teardown"
-	@echo "    ansible/vars/     vms.yml   : config VMs (vmrest, template_id, specs)"
+	@echo "    ansible/vars/     vms.yml   : config VM (proxmox_vm_ip, ssh_user, ssh_private_key)"
 	@echo "    terraform/k8s/    Helm releases (platform, monitoring, gitops, apps)"
 	@echo "    helm/             Charts Helm (demo-app)"
 	@echo "    state/            States Terraform (gitignored)"
 	@echo ""
 	@echo "  Setup initial (one-time) :"
 	@echo "    make init         Initialiser Terraform k8s + collections Ansible"
-	@echo "    make vm-list      Lister les VMs VMware Fusion (trouver template_vm_id)"
-	@echo "    → renseigner ansible/vars/vms.yml (vmrest_user/password, template_vm_id)"
+	@echo "    → renseigner ansible/vars/vms.yml (proxmox_vm_ip, ssh_user, ssh_private_key)"
 	@echo ""
 	@echo "  Déploiement :"
-	@echo "    make deploy       Flow complet (6 étapes) :"
-	@echo "                        1. ansible-pre        (vmrest check + Helm cache)"
-	@echo "                        2. ansible-create-vms (clone + power on + IPs)"
+	@echo "    make deploy       Flow complet (5 étapes) :"
+	@echo "                        1. ansible-pre        (outils + Helm cache)"
+	@echo "                        2. ansible-create-vms (génère vm-outputs.json)"
 	@echo "                        3. ansible-k3s        (install k3s + kubeconfig)"
 	@echo "                        4. tf-k8s-apply       (Helm releases)"
 	@echo "                        5. tf-k8s-outputs     (outputs → terraform-outputs.json)"
 	@echo "                        6. ansible-post       (ClusterIssuer, demo-app, ArgoCD)"
-	@echo "    make destroy      Teardown complet (k3s + VMs + state)"
+	@echo "    make destroy      Teardown (k3s désinstallé + state purgé, VM conservée)"
 	@echo ""
 	@echo "  Utilitaires :"
 	@echo "    make status          État du cluster (nœuds + pods + Helm)"
@@ -56,19 +55,13 @@ help:
 
 # ─── Initialisation ───────────────────────────────────────────────────────────
 init: _check-deps
-	@echo ">>> [1/3] Initialisation Terraform k8s..."
+	@echo ">>> [1/2] Initialisation Terraform k8s..."
 	$(TF_K8S) init -upgrade
-	@echo ">>> [2/3] Installation des collections Ansible..."
+	@echo ">>> [2/2] Installation des collections Ansible..."
 	ansible-galaxy collection install -r ansible/requirements.yml
-	@echo ">>> [3/3] Lancement de vmrest en arrière-plan..."
-	@osascript -e 'tell application "Terminal" to do script "vmrest -C"' 2>/dev/null \
-		|| open -a Terminal "vmrest" 2>/dev/null \
-		|| echo "  ⚠ Impossible d'ouvrir un terminal. Lancez manuellement : vmrest -C"
-	@echo "  vmrest lancé dans un nouveau terminal."
 	@echo ""
 	@echo ">>> Init terminée. Étapes suivantes :"
-	@echo "    make vm-list → récupérer l'ID du template"
-	@echo "    → renseigner ansible/vars/vms.yml"
+	@echo "    → renseigner ansible/vars/vms.yml (proxmox_vm_ip, ssh_user, ssh_private_key)"
 	@echo "    make deploy"
 
 # ─── Validation ───────────────────────────────────────────────────────────────
@@ -91,19 +84,19 @@ deploy: _check-deps ansible-pre ansible-create-vms ansible-k3s tf-k8s-apply tf-k
 	@echo " ► make argocd-password pour le mot de passe ArgoCD"
 	@echo "════════════════════════════════════════════════════════════"
 
-# ── Étape 1 : vérifier vmrest + préparer Helm cache
+# ── Étape 1 : préparer outils + Helm cache
 ansible-pre: _check-deps
-	@echo ">>> [1/6] Ansible pre-deploy : vérification + Helm cache..."
+	@echo ">>> [1/6] Ansible pre-deploy : outils + Helm cache..."
 	$(ANSIBLE) ansible/playbooks/pre-deploy.yml
 
-# ── Étape 2 : créer les VMs + attendre les IPs → vm-outputs.json
+# ── Étape 2 : générer vm-outputs.json depuis la config Proxmox
 ansible-create-vms: _check-deps
-	@echo ">>> [2/6] Ansible create-vms : clonage + démarrage + IPs..."
+	@echo ">>> [2/6] Ansible create-vms : génération vm-outputs.json..."
 	$(ANSIBLE) ansible/playbooks/create-vms.yml
 
 # ── Étape 3 : installer k3s + kubeconfig
 ansible-k3s:
-	@echo ">>> [3/6] Ansible k3s : installation du cluster k3s..."
+	@echo ">>> [3/6] Ansible k3s : installation k3s single-node..."
 	$(ANSIBLE) ansible/playbooks/k3s-install.yml
 
 # ── Étape 4 : déployer les Helm releases
@@ -125,29 +118,19 @@ ansible-post:
 destroy: _check-deps ansible-teardown
 	@echo ""
 	@echo "════════════════════════════════════════════════════════════"
-	@echo " Cluster détruit, VMs supprimées, states purgés."
+	@echo " k3s désinstallé, states purgés."
+	@echo " La VM Proxmox est toujours en place."
 	@echo " Prochain déploiement : make deploy"
 	@echo "════════════════════════════════════════════════════════════"
 
 ansible-teardown:
-	@echo ">>> Teardown : k3s + VMs + states..."
+	@echo ">>> Teardown : k3s + states..."
 	$(ANSIBLE) ansible/playbooks/teardown.yml
 
 tf-state-purge:
 	@rm -f state/k8s.tfstate state/k8s.tfstate.backup \
-	       vm-ids.json vm-outputs.json terraform-outputs.json
+	       vm-outputs.json terraform-outputs.json
 	@echo "States purgés."
-
-# ─── VMware Fusion ────────────────────────────────────────────────────────────
-vm-list:
-	@echo ">>> Liste des VMs VMware Fusion (via vmrest) :"
-	@VMREST_URL=$$(grep 'vmrest_url:' ansible/vars/vms.yml | awk '{print $$2}' | tr -d '"') && \
-	VMREST_USER=$$(grep 'vmrest_user:' ansible/vars/vms.yml | awk '{print $$2}' | tr -d '"') && \
-	VMREST_PASS=$$(grep 'vmrest_password:' ansible/vars/vms.yml | awk '{print $$2}' | tr -d '"') && \
-	curl -sk -u "$$VMREST_USER:$$VMREST_PASS" "$$VMREST_URL/api/vms" | jq . \
-		|| echo "(vmrest non accessible — activer dans Fusion → Préférences → Enable REST API)"
-	@echo ""
-	@echo "Renseigner template_vm_id dans : ansible/vars/vms.yml"
 
 # ─── Utilitaires cluster ──────────────────────────────────────────────────────
 status: _check-k8s-deps
@@ -237,7 +220,7 @@ app-hosts: _check-k8s-deps
 	echo "echo \"$$MASTER_IP  demo-app.local preview.demo-app.local\" | sudo tee -a /etc/hosts"
 
 clean:
-	rm -f terraform-outputs.json vm-outputs.json vm-ids.json
+	rm -f terraform-outputs.json vm-outputs.json
 	rm -rf terraform/k8s/.terraform terraform/k8s/.terraform.lock.hcl
 	rm -rf terraform/k8s/.terraform-helm
 

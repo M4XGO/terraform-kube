@@ -1,13 +1,10 @@
 ---
 # ─── Pre-deploy : préparation de l'environnement ──────────────────────────────
-# Vérifie que vmrest (VMware Fusion REST API) est accessible, installe les
-# outils nécessaires (kubectl, helm) et initialise le cache Helm isolé pour
-# Terraform.
+# Installe les outils nécessaires (kubectl, helm) et initialise le cache Helm
+# isolé pour Terraform.
 #
-# Les VMs sont créées par : terraform -chdir=terraform/vms apply
-# k3s est installé par    : ansible/playbooks/k3s-install.yml
-#
-# Usage : ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/pre-deploy.yml
+# Prérequis : connexion internet (Homebrew / apt)
+# Usage     : ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/pre-deploy.yml
 # ──────────────────────────────────────────────────────────────────────────────
 
 - name: Pre-deploy — préparation environnement
@@ -15,7 +12,6 @@
   gather_facts: true
 
   vars:
-    vmrest_url: "http://127.0.0.1:8697/api"
     helm_cache_dir: "{{ playbook_dir }}/../../terraform/k8s/.terraform-helm"
     helm_repos:
       - { name: ingress-nginx,        url: "https://kubernetes.github.io/ingress-nginx" }
@@ -25,29 +21,6 @@
       - { name: cilium,               url: "https://helm.cilium.io/" }
 
   tasks:
-    # ── Vérification vmrest ────────────────────────────────────────────────────
-
-    - name: Vérifier que vmrest est accessible
-      ansible.builtin.uri:
-        url: "{{ vmrest_url }}/vms"
-        method: GET
-        validate_certs: false
-        status_code: [200, 401]
-      register: vmrest_check
-      failed_when: false
-
-    - name: Avertissement si vmrest inaccessible
-      ansible.builtin.fail:
-        msg: |
-          vmrest n'est pas accessible sur {{ vmrest_url }}.
-          Activez l'API REST dans VMware Fusion Pro → Préférences → Enable REST API
-          puis relancez : make deploy
-      when: vmrest_check.status not in [200, 401]
-
-    - name: "vmrest ✓"
-      ansible.builtin.debug:
-        msg: "vmrest accessible sur {{ vmrest_url }}"
-
     # ── Installation des outils ────────────────────────────────────────────────
 
     - name: "[macOS] Installer kubectl et helm"
@@ -130,8 +103,7 @@
     - name: Prêt
       ansible.builtin.debug:
         msg:
-          - "✓ vmrest accessible"
           - "✓ kubectl et helm disponibles"
           - "✓ Cache Helm Terraform initialisé (terraform/k8s/.terraform-helm/)"
           - ""
-          - "Prochaine étape : terraform/vms apply (géré automatiquement par make deploy)"
+          - "Prochaine étape : generate vm-outputs (géré automatiquement par make deploy)"
