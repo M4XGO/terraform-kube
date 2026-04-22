@@ -1,41 +1,31 @@
-#ENC[AES256_GCM,data:ICxifyJolZhxYFDcAd7/nnfZINDAB0p1FZutocaOGumkvZ0sKX+NtNnAssAKnZVfBYLRejp7oLZj+rSNwUCvMb7C/EVv391aVUKCce6A4j3anM/LQVzw04eH/fE3RT2wNEJPgww4p0XSz8EhM5r4hwb9YREcbL5Vb5rHavBGoB19g7kg5faO4DsQNKx5Yzsrs4BdOX6jjGYCwc7Xjb4YpTVVEzaqzpDeHtn4pF0OPURlHy7SHk9KbbVHczQ=,iv:edicEFTI3qTZX/i0zmijERVVDMoTNRlZU2POwGhFoDo=,tag:nSk/DMaHYEHL+G1LdvrVVA==,type:comment]
-#ENC[AES256_GCM,data:wwRifxike2BXg6dcg9MD49fKo8YLV5hKqegBpOSOkvhaRMqeCPJFJOhmddMlwDJ06DishrFi0GZJ,iv:pZ5oqMHWsz35E9zZjAhhli3b2CvQCQGNWRYgRdsY3u0=,tag:Fi+lUFkcuJURjf3HThNIrg==,type:comment]
-#ENC[AES256_GCM,data:AU/CWuDDy74A6sdOdUYwLKhk+xeqp5T/HYjkwLCz2ctsL0b2jBGMlGPtwVw=,iv:G1zIBqwHLAAc091UtmNy2E0LJjv7h/TshvfQKYdEvFU=,tag:K0pWzE2cTliA3+AFUZmWQw==,type:comment]
-#ENC[AES256_GCM,data:Gov0k7ZMK2oii9yRkktnHXRQnJKjNoJCveNCkCwzn2CxgFONq+ss/l7KEhWRrg+mIL01pU1Zgx0NMBRd78B63eqz/XjZKGj+bRUIIvGhAuqLl3322B54UlpQ52Vy0MY3R65A6QlFluQ56ZKamOS3ChyVtu4JZ1M44omLA0JYTJgAfSpP5mJSROLIABaQf3XFfpvS/Ge2Uj6ca9o1QSTy1IKLKHnnE8RaM+1XRKnDDBMXqBp53IbPRhO8i5Wu07W7+19owPppogtYKSTyujdax1VSV7onRzOFZkFpMaXypeFtdaeOI0h2SQ==,iv:CUMBG7nZwPuQ7F7wZpgCpdaJZV9y8Jpg4NkB64BjnsI=,tag:SMlmV27k7hjQxMdYhAr6pA==,type:comment]
-#ENC[AES256_GCM,data:JNc66AP2sqytRUrze5EhoaZqcKeUmtDx+49Pa9NkDBpw4LNmK9IHzucp8yNuA84SP7b+3YIP7rUojByfb+6upOBXrf9PWFq/WYLTw+YT+tQjEXPRXRRFU4hdzZxlIe178Utmd6xRkb+O4UvxS8Z+lhZ8PGuaqoMjHYKzlpRVPEW2Rpw84I/notaSR/qJDbaxT3BxawM14RAHa9XStgXM6F3u8F/JF9yqSeX1TH6ByNsxIUXSnPpwhDfkqQ==,iv:N4L2Y1a3KHE37LYiVNa8vAF0hDp2Fenlk0F2KfNli7w=,tag:KDwmFVRdiDlI2U5cw3ht1Q==,type:comment]
-#ENC[AES256_GCM,data:u7uL1v1BsTIRxUbv4IZN0Xzje86juxJVJzuHnXSYqy1XqdqO/HaKv9mo4EQlPaM2wFPS8SJPG7qZiE6706dITAIU,iv:M6R5zPkW6t6kYWOZz+XuxasWMSIohNQvsd8kqFP5Cg0=,tag:r/E3kU0Nm7j0KKQ/EUwJYw==,type:comment]
-vmrest_url: ENC[AES256_GCM,data:oRXqjxyiRlqUP5/hHO5LJSR12AiR,iv:fj0+4x1dYb4OAOPFo0vc7kn0Kt0YC1t3c85O1n2F4dA=,tag:J5PuA3w/pCh4XcGIqEP5IA==,type:str]
-vmrest_validate_certs: ENC[AES256_GCM,data:6FGfPTk=,iv:tFojqqm28+YlmRX0c5hxJ7slEHU3Eu7oI+dYux71v4g=,tag:OToVIg0BW5nQeRJcWE2NRw==,type:bool]
-#ENC[AES256_GCM,data:BkLIGKWizk4bC5Z9+vyAm8pnmXJxB2mrbqTQ90Zj4DSvvimIItXOd01z8vCY8nhySMPP3go=,iv:j7LpArcgTadtOh898s+NNZCmiTyY4dSz3Bu5WjrnGNI=,tag:mrHCl9fH3Dr6ovN0gwBLhg==,type:comment]
-vmrest_user: ENC[AES256_GCM,data:ISONzkI=,iv:GmLW4YFcKDGY+J1DVryVfUPAdHhmO1w3cufjmcRMlCU=,tag:aV1ev6e/CT232fOmu1uKHw==,type:str]
-vmrest_password: ENC[AES256_GCM,data:UYlDWjDhd9I=,iv:ZoKG7foaaYd8ihhjvYn9Mq+UKgHlzRAJlbb6e8g5yNc=,tag:9VPLlpBeeiJeEAM4FiZE/w==,type:str]
-#ENC[AES256_GCM,data:+1igJGWYXYS16+TswPdXkM791HqA3CvT8Szelx2LkddEesiU1K+WYmr1BhNIB6fRhV+b+cChQZtTx1w1oLljnME9RngoehEycIa4alS73ObibzTtU83tHSUm57aey4stJ/r6mCq3QBuFyCz5rWAp4Rsvj/zBTFBl+meFWbohcjv50J6LpR6HV1g2OPeGcj4oBDUQOeDyJ41kzfJe7eiKwIjA5bCxNVPq6awSQdW1rHCaVSVOJir4siqX4X0KlQ/fFADHGssynMxclxKwIlo=,iv:BTY6BSSUvoGa9qsQqOHr9GMiL48K1ec9FUSWSem3RfY=,tag:ff7pPY6VR2gCRcRwKlIueQ==,type:comment]
-#ENC[AES256_GCM,data:HjhEh3xCa6vinqMRhmLwGGAO8VaZmw+bpqZoPIWoR3VPKQ==,iv:AmdbrSO45brIKWgS3GxPpBikSmobudV2X+Pq8wEb/68=,tag:4TwjfRWcEde6YxGbsSW5VQ==,type:comment]
-#ENC[AES256_GCM,data:5q79OCT7+eA0dc46hfHMvaTwz8EhAQNQHCC2PRlc4w==,iv:NAKrNTUPTflnhsZf5R3nT6BwXDF5j8ZCBsVtXOChBMY=,tag:hwseLCIYeWBOm2/PXH48EQ==,type:comment]
-template_vm_id: ENC[AES256_GCM,data:a/TFpBJn+CDp8IhhP4I3WSJbGl3nGhUtz7bexuckDpI=,iv:GNsoXbI62Q2vQf23byqUWMkSeP2vSgftVRvBkn9vvoc=,tag:Fjq1l1yzfVEbv8tM8cdk5w==,type:str]
-#ENC[AES256_GCM,data:rhsLTeevJt/KP+MVt4g2qsYPT/Ao/NNi98YGGoPD72qqYD3pQQ==,iv:pX0ePzJGWgfZLHDhyTR3EHsSFvLK4SggoWCaPa31YGM=,tag:yo9sHaMxvqYWvSaAlmqq5w==,type:comment]
-vm_base_dir: ENC[AES256_GCM,data:9Mmiit2X0tmqD7rOB2zj9bniPU2v2SIWbvdK,iv:sr80r7EWrLd3Hgmt6xYCl+Otn49KfQM2OLFZXQhE89o=,tag:om7ymvXkx+V4Ul9wExlBgQ==,type:str]
-#ENC[AES256_GCM,data:96O9dDZegPMVzo2k1DabKQoXFh8M3ZseMDPSQSUTFZxRmmswudnmorcIh3wGbmOZ5BolwAFrBfZbcb2tIL57n0QQyjjjtCExkQ8TPYczvQCb7Y7ZNz0oxIp/ACz4JVd4ov3IAVP7gK6mtpPf6wiwpCihy3yyLykAD5i4I3b678Kk0wTnOYF+tIywwWAWpiKheUzBxAIkWotBC2ImkjMd5KvwxfRYhoJL6ricl7runzQa2eLF7WLJZ65QC+7dnBQ0zIDifLYTkyQ4Wk8Q2REVkjwglf6aTegYZ6rRBHLo,iv:bPsTMGqKO8058YGuxAda89usD72VCwFZa6E8tSjNzSM=,tag:z/CsQxocaB6jboFgD1nucw==,type:comment]
-ssh_user: ENC[AES256_GCM,data:nZMTPu1P,iv:7aZjT1XiU2pqMS6FZeym/5b4gnKYcdlV9sKM3r41l8M=,tag:fuTC+busptdrIhHg1fTxnw==,type:str]
-ssh_private_key: ENC[AES256_GCM,data:s+WPBXkSYU67GLopvLDEApc=,iv:RmHfx5xOei/76F215JsqniLQOm4haRRwZnSBcCjwCt0=,tag:qpwQAeoLg/eJ6HQKtXanxQ==,type:str]
-#ENC[AES256_GCM,data:qy7AOaU0ZfM9HHhnxr56st1ZMtYz4gzldTUR6sD8q7j9GQ5DKtuORlNwLMvAqLGZoZzUW2n+51K+7pUtDT5OXzKNVg5rDpMjUw/ssYyupoKjZ2GyxPiIhD1jZH38dXjlY9DhJqMrnq+EUEpHEPbK+ZEIXAbAiKNwcuGA1cNJuhHUlp7c7XTP8fwFtbNVCMzpNPOTCeC/PXGJGAnOi/V4AUASDZuxWn1iplFYDfd79A1Oexyps4Ahf7XWpfQzd6Wk8d6On9u0DZSyBsTmM0waJ+isyHjQmg==,iv:V7xcw6zLxrReiulNQGcrrB7ebwdlPl8vLL14/6P8n40=,tag:1mJePcxeSb5u43+WOuslcg==,type:comment]
-cluster_prefix: ENC[AES256_GCM,data:0zOG0YguG8Bf6zFMJ/s=,iv:0grwaU1X8IO6BYcwUNoOehG+y4pU5CBB8MOSXpi1J3E=,tag:OBx4X5sZIEfgcYpT8rUfTA==,type:str]
-#ENC[AES256_GCM,data:w+sKPwaSqO7cQl/RujN1/jxHR4Jyd7o8Yh56vPpr5Ffk34v/NeQTC3i2BCBB9E6cg5ypNDErlFBe/qg+3VVNxq/54W5FQIaA7TShBL3Jqq2AU+RylHZgzIr9PUpKgqYResogTSx8OWIhpmiiDb+AoRu+RhwjFkDZWIQGCkAb4YxX0pXu+kFJO0aDyq58WeRBtoj9ieQt1hYaQppwSCkr8vU0Qn250M43viLwRHwhTJ0bbgaOJrrCYmk4WFr64xpV8iBTvRFcxvIZOF0z,iv:XbTnQ4BcGZEY9sx2RcuHbIHtCqFUIMc2u25XY1IlUvE=,tag:vZaWrduJeYz3VcLjnuYA0g==,type:comment]
-master_cpu: ENC[AES256_GCM,data:9A==,iv:RiG3yMiVF9NWqTXNrsfl6RWrKc/b1Ff59MtrnbsKrsU=,tag:7bIcZtG0tQy7uBx0ueVRWA==,type:int]
-#ENC[AES256_GCM,data:sw5M,iv:rseUuToQdPoRMzkI1Kr39Prdhn/QZGco73bmVb1vX04=,tag:ZKyZqHYpbUvVlOu+LuIVHg==,type:comment]
-master_memory: ENC[AES256_GCM,data:o45agg==,iv:X9dVUW+f4Pw9lL3GYRfPPRY9MkBdqibrUcbavGbcVqs=,tag:wIipt+Eg4BNFxhOpN4sxpw==,type:int]
-#ENC[AES256_GCM,data:x5+4cmeF4l597JRzJaplQRd6WLMXB234ibcKLQlHio5/jIWZqdn8R73K2Gf7xNfzgILhl1omYN4cJrms6MmD+zxBtD9DK4oZ/YhEeu1sOwTRzfzSupy4wvpsPO3W0axkyaTaVwa0YKcUdTQPoBMQC3vCr7PDPDG+4Oy0yfB+obaJPWBFZZyggwBT8fL/VOiKXChSYs1VhOnGyeIWOVsg5m62pZRietjQVYdoU5EZw14df34h7jknu1/jDuy/O2Kkn+Bv94sxdRG97Q==,iv:LzxhM3mIybp9V/mTO4QXPu006O4RErQQVe7tjHiFP+4=,tag:UH6YW/KaDkdB/ZxJes32hg==,type:comment]
-worker_count: ENC[AES256_GCM,data:zA==,iv:fDtcvPZTBrCJRnSeP1V2KkFScFfGh+tdw3Vl34ILZPI=,tag:XVqi0CoCgyXrozUbqhrLRA==,type:int]
-worker_cpu: ENC[AES256_GCM,data:7A==,iv:NfmjaaNAsp9FosOMO/m2OeJm+KBzHd4qOHmXQPpCiQg=,tag:y5NPkFfwpgcZFpfPtxqb8Q==,type:int]
-#ENC[AES256_GCM,data:/99B,iv:GQ3KaoDYsaxgErfu5lt5dnn9DfuzTaLCCRiErPY7m5I=,tag:ZbsNGY7clll1ZN6EEKLPuw==,type:comment]
-worker_memory: ENC[AES256_GCM,data:5S/R9w==,iv:937cuiUumMAScdINQ1I5Vz5RiVpV4rhuJOqxvG0l7D8=,tag:ji8a2IYa/NnInRrWogSTZw==,type:int]
-sops:
-    kms:
-        - arn: arn:aws:kms:eu-west-3:711387131544:alias/kody-sops-secret
-          created_at: "2026-04-14T19:28:28Z"
-          enc: AQICAHgJPZNGCCV/CbSXFzrHfEIJdKPjyjPelPSL0QlrsP5knQHSTITZH79o4fXrXln8RWM8AAAAfjB8BgkqhkiG9w0BBwagbzBtAgEAMGgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMh1Rz0POdnmRsN73xAgEQgDsBc8Zzx19gN/UD1dIx2jdVXYyLopRK+2xY0jchMmam7zIWxH4fm40cFNzHo/lvZ4sXeSidTpXdfu/EKg==
-          aws_profile: ""
-    lastmodified: "2026-04-14T19:28:28Z"
-    mac: ENC[AES256_GCM,data:sQlKQ7dU7UCM9G5sdZ5lH+YkX1U+OB2cnuVWsV7LFsH0GoSAw1Utayg4/DrXpqQFadUnPdOWSgHE65fUnoxbb0tQMAyXxxM04Dt/f9ZMUZrCPa1lE99tWiB5hWnw0889TqfLnWTyNfABXJzArCFcUoYETYtLaadxAkjF0rR8lvY=,iv:eqGrslj5EMoQ3FOQObE7wgl24r3gmNJK1KVmGdMTxls=,tag:lxgnIRbz3hS7rKZLdMiUtA==,type:str]
-    unencrypted_suffix: _unencrypted
-    version: 3.11.0
+# ─── ansible/vars/vms.yml ────────────────────────────────────────────────────
+# Configuration des VMs VMware Fusion pour le cluster k3s.
+# Utilisé par : create-vms.yml, teardown.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# ─── VMware Fusion REST API ───────────────────────────────────────────────────
+# Activer : VMware Fusion Pro → Préférences → Enable REST API
+vmrest_url: http://127.0.0.1:8697
+vmrest_validate_certs: false
+# ⚠️  À renseigner (ne pas committer ces valeurs)
+vmrest_user: Maxgo
+vmrest_password: Pa$$w0rd
+# ─── Template VM ─────────────────────────────────────────────────────────────
+# ID de la VM Debian ARM à cloner.
+# Récupérer via : make vm-list
+template_vm_id: 94EM6D9K533L10LBHP32CCTIU1SF3337
+# Dossier où stocker les VMs clonées
+vm_base_dir: /Users/maximenony/Downloads
+# ─── SSH ─────────────────────────────────────────────────────────────────────
+ssh_user: debian
+ssh_private_key: ~/.ssh/id_ed25519
+# ─── Cluster ─────────────────────────────────────────────────────────────────
+cluster_prefix: automatisation-ansible-cluster
+# ─── Specs master ────────────────────────────────────────────────────────────
+master_cpu: 2
+# Mo
+master_memory: 4096
+# ─── Specs workers ───────────────────────────────────────────────────────────
+worker_count: 2
+worker_cpu: 2
+# Mo
+worker_memory: 2048

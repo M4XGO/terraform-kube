@@ -34,7 +34,7 @@
         worker_ips: "{{ vms.worker_ips.value }}"
         ssh_user:   "{{ vms.ssh_user.value | default('debian') }}"
         ssh_key:    "{{ vms.ssh_private_key.value | default('~/.ssh/id_ed25519') }}"
-        cluster_name: "{{ vms.cluster_prefix.value | default('terraform-kube') }}"
+        cluster_name: "{{ vms.cluster_prefix.value | default('automatisation-ansible-cluster') }}"
 
     - name: Ajouter le master à l'inventaire dynamique
       ansible.builtin.add_host:
@@ -238,7 +238,7 @@
 
   vars:
     master_ip: "{{ hostvars['localhost']['vms']['master_ip']['value'] }}"
-    cluster_name: "{{ hostvars['localhost']['vms']['cluster_prefix']['value'] | default('terraform-kube') }}"
+    cluster_name: "{{ hostvars['localhost']['vms']['cluster_prefix']['value'] | default('automatisation-ansible-cluster') }}"
     local_kubeconfig: "{{ lookup('env', 'HOME') }}/.kube/config"
 
   tasks:
@@ -297,6 +297,9 @@
       delegate_to: localhost
       become: false
       register: local_nodes
+      retries: 6
+      delay: 15
+      until: local_nodes.rc == 0
       changed_when: false
 
     - name: Cluster opérationnel

@@ -5,7 +5,7 @@
         rollout-status rollout-upgrade rollout-promote rollout-abort \
         rollout-retry rollout-undo rollout-history app-url app-hosts
 
-CLUSTER_NAME ?= terraform-kube
+CLUSTER_NAME ?= automatisation-ansible-cluster
 
 # Workspace Terraform (k8s uniquement — VMs gérées par Ansible)
 TF_K8S = terraform -chdir=terraform/k8s
@@ -16,7 +16,7 @@ ANSIBLE = ansible-playbook -i ansible/inventory/hosts.yml
 # ─── Aide ─────────────────────────────────────────────────────────────────────
 help:
 	@echo ""
-	@echo "  terraform-kube — Cluster k3s sur VMware Fusion (3 VMs Debian ARM)"
+	@echo "  automatisation-ansible-cluster — Cluster k3s sur VMware Fusion (3 VMs Debian ARM)"
 	@echo "  Provisionnement : Ansible (VMs + k3s) + Terraform/k8s (Helm)"
 	@echo ""
 	@echo "  Structure :"
@@ -164,14 +164,14 @@ status: _check-k8s-deps
 	@kubectl get pods -A --context=$(CLUSTER_NAME) 2>/dev/null | grep -c Running | xargs -I{} echo "{} pods en Running"
 
 port-forwards: _check-k8s-deps _check-cluster
-	@echo ">>> Port-forwards en arrière-plan..."
-	@kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80 \
+	@echo ">>> Port-forwards en arrière-plan (accessible sur le réseau)..."
+	@kubectl port-forward --address 0.0.0.0 -n monitoring svc/kube-prometheus-stack-grafana 3000:80 \
 		--context=$(CLUSTER_NAME) > /dev/null 2>&1 & echo "  Grafana      : http://localhost:3000"
-	@kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090 \
+	@kubectl port-forward --address 0.0.0.0 -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090 \
 		--context=$(CLUSTER_NAME) > /dev/null 2>&1 & echo "  Prometheus   : http://localhost:9090"
-	@kubectl port-forward -n argocd svc/argocd-server 8080:80 \
+	@kubectl port-forward --address 0.0.0.0 -n argocd svc/argocd-server 8080:80 \
 		--context=$(CLUSTER_NAME) > /dev/null 2>&1 & echo "  ArgoCD       : http://localhost:8080"
-	@kubectl port-forward -n argo-rollouts svc/argo-rollouts-dashboard 3100:3100 \
+	@kubectl port-forward --address 0.0.0.0 -n argo-rollouts svc/argo-rollouts-dashboard 3100:3100 \
 		--context=$(CLUSTER_NAME) > /dev/null 2>&1 & echo "  Rollouts     : http://localhost:3100"
 	@echo "Pour arrêter : pkill -f 'kubectl port-forward'"
 

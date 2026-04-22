@@ -16,7 +16,7 @@
   vars:
     tf_outputs_file: "{{ playbook_dir }}/../../terraform-outputs.json"
     tf_outputs: "{{ (lookup('file', tf_outputs_file, errors='ignore') | default('{}') | from_json) }}"
-    cluster_name: "{{ tf_outputs.get('cluster_name', {}).get('value', 'terraform-kube') }}"
+    cluster_name: "{{ tf_outputs.get('cluster_name', {}).get('value', 'automatisation-ansible-cluster') }}"
     app_namespace: "{{ tf_outputs.get('app_namespace', {}).get('value', 'demo-app') }}"
     git_repo_url: "{{ tf_outputs.get('git_repo_url', {}).get('value', '') }}"
     kubeconfig_path: "{{ lookup('env', 'KUBECONFIG') | default('~/.kube/config', true) }}"
@@ -113,7 +113,7 @@
             namespace: cert-manager
           spec:
             isCA: true
-            commonName: terraform-kube-ca
+            commonName: automatisation-ansible-cluster-ca
             secretName: selfsigned-ca-secret
             privateKey:
               algorithm: ECDSA

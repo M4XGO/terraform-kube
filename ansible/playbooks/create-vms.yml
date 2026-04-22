@@ -202,6 +202,28 @@
         _vm_ids: "{{ _vm_ids | default([]) + [_vm_path_to_id[vm_base_dir + '/' + item + '.vmwarevm/' + item + '.vmx']] }}"
       loop: "{{ _node_names }}"
 
+    # ── Éteindre les VMs clonées avant de configurer CPU/RAM ────────────────
+
+    - name: Éteindre toutes les VMs clonées (requis pour modifier CPU/RAM)
+      ansible.builtin.uri:
+        url: "{{ vmrest_url }}/api/vms/{{ item }}/power"
+        method: PUT
+        user: "{{ vmrest_user }}"
+        password: "{{ vmrest_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vmrest_validate_certs }}"
+        headers:
+          Content-Type: "application/vnd.vmware.vmw.rest-v1+json"
+        body: "off"
+        body_format: raw
+        status_code: [200, 204, 409]
+      loop: "{{ _vm_ids }}"
+      ignore_errors: true
+
+    - name: Attendre l'extinction des VMs
+      ansible.builtin.pause:
+        seconds: 5
+
     # ── Configurer CPU/RAM ───────────────────────────────────────────────────
 
     - name: "Configurer le master ({{ master_cpu }} vCPU / {{ master_memory }} Mo)"

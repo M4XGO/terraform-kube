@@ -3,7 +3,7 @@
 variable "cluster_name" {
   description = "Nom du contexte kubectl (k3s — défini par ansible/playbooks/k3s-install.yml)"
   type        = string
-  default     = "terraform-kube"
+  default     = "automatisation-ansible-cluster"
 }
 
 # ─── Feature flags ────────────────────────────────────────────────────────────

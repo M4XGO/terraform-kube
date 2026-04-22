@@ -20,7 +20,7 @@ variable "git_repo_url" {
     URL du dépôt Git pour ArgoCD GitOps.
     Si vide : l'application est déployée via Helm direct (sans GitOps).
     Si défini : ArgoCD synchronise depuis ce repo (créé par Ansible post-deploy).
-    Exemple : https://github.com/user/terraform-kube.git
+    Exemple : https://github.com/user/automatisation-ansible-cluster.git
   EOT
   type        = string
   default     = ""
