@@ -6,7 +6,7 @@
 # ssh_private_key: chemin vers la clé privée SSH locale
 # cluster_prefix : nom du contexte kubectl créé par k3s-install
 
-proxmox_vm_ip: ""
-ssh_user: "debian"
+proxmox_vm_ip: "10.230.105.254"
+ssh_user: "root"
 ssh_private_key: "~/.ssh/id_ed25519"
 cluster_prefix: "terraform-kube"

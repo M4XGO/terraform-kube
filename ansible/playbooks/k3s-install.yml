@@ -82,11 +82,11 @@
   become: true
 
   tasks:
-    - name: Mettre à jour les paquets
-      ansible.builtin.apt:
-        update_cache: true
-        upgrade: safe
-      when: ansible_os_family == "Debian"
+    # - name: Mettre à jour les paquets
+    #   ansible.builtin.apt:
+    #     update_cache: true
+    #     upgrade: safe
+    #   when: ansible_os_family == "Debian"
 
     - name: Installer les paquets nécessaires
       ansible.builtin.apt:
