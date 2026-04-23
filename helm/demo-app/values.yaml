@@ -7,30 +7,30 @@ image:
   tag: "1.25-alpine"
   pullPolicy: IfNotPresent
 
-# app:
-#   version: "v1.0.0"
-#   colorName: "blue"
-#   colorHex: "#1a6cf5"
-#   gradientStart: "#1a6cf5"
-#   gradientEnd: "#0d3fa3"
-#   message: "Version 1.0 — Production"
-#   features:
-#     - "Interface de base"
-#     - "Authentification utilisateur"
-#     - "Dashboard principal"
-
 app:
-  version: "v2.0.0"
-  colorName: "green"
-  colorHex: "#16a34a"
-  gradientStart: "#16a34a"
-  gradientEnd: "#065f46"
-  message: "Version 2.0 — Nouvelle fonctionnalité ✨"
+  version: "v1.0.0"
+  colorName: "blue"
+  colorHex: "#1a6cf5"
+  gradientStart: "#1a6cf5"
+  gradientEnd: "#0d3fa3"
+  message: "Version 1.0 — Production"
   features:
-    - "Interface redesignée"
-    - "Authentification MFA"
-    - "Dashboard avancé"
-    - "API v2 — performances +40%"
+    - "Interface de base"
+    - "Authentification utilisateur"
+    - "Dashboard principal"
+
+# app:
+#   version: "v2.0.0"
+#   colorName: "green"
+#   colorHex: "#16a34a"
+#   gradientStart: "#16a34a"
+#   gradientEnd: "#065f46"
+#   message: "Version 2.0 — Nouvelle fonctionnalité ✨"
+#   features:
+#     - "Interface redesignée"
+#     - "Authentification MFA"
+#     - "Dashboard avancé"
+#     - "API v2 — performances +40%"
 
 service:
   port: 80
