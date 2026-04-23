@@ -272,6 +272,17 @@
       delegate_to: localhost
       become: false
 
+    - name: Supprimer l'ancien contexte k3s du kubeconfig local (si existant)
+      ansible.builtin.shell: |
+        if [ -f "{{ local_kubeconfig }}" ]; then
+          kubectl config unset contexts.{{ cluster_name }} 2>/dev/null || true
+          kubectl config unset clusters.{{ cluster_name }} 2>/dev/null || true
+          kubectl config unset users.{{ cluster_name }} 2>/dev/null || true
+        fi
+      delegate_to: localhost
+      become: false
+      changed_when: true
+
     - name: Fusionner le kubeconfig dans ~/.kube/config
       ansible.builtin.shell: |
         if [ -f "{{ local_kubeconfig }}" ]; then
