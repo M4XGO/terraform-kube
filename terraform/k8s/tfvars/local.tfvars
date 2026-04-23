@@ -1,6 +1,6 @@
 # ─── Cluster ──────────────────────────────────────────────────────────────────
 # Doit correspondre au nom du contexte kubectl généré par ansible/k3s-install.yml
-cluster_name = "terraform-kube"
+cluster_name = "automatisation-ansible-cluster"
 
 # ─── Features ─────────────────────────────────────────────────────────────────
 enable_platform   = true  # Ingress NGINX + cert-manager
